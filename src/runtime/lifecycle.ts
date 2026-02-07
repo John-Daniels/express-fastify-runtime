@@ -3,7 +3,7 @@
  */
 
 import Fastify from 'fastify';
-import type { ExpressLikeApp } from '../types/internal.js';
+import type { ExpressLikeApp, ServerLike } from '../types/internal.js';
 import type { ExpressHandler } from '../types/express.js';
 import { classifyAll } from '../app/classify.js';
 import { createExpressEngine } from '../express/engine.js';
@@ -12,6 +12,8 @@ import { registerCompiledRoutes } from '../fastify/register.js';
 import { populateExpressApp } from './populateExpress.js';
 import { assertNotLocked } from '../utils/assert.js';
 import { RouteStore } from '../app/RouteStore.js';
+import { isExpressRouter, flattenRouter } from '../app/flattenRouter.js';
+import { normalizePath } from '../utils/path.js';
 
 export interface CreateAppOptions {
   /** If true, log compile and lane info (dev). */
@@ -25,10 +27,29 @@ export function createApp(_options?: CreateAppOptions): ExpressLikeApp {
   const app: ExpressLikeApp = {
     use(pathOrHandler: string | ExpressHandler, ...handlers: ExpressHandler[]) {
       assertNotLocked(locked.current);
-      if (typeof pathOrHandler === 'function') {
-        routeStore.addMiddleware('/', pathOrHandler, ...handlers);
-      } else {
-        routeStore.addMiddleware(pathOrHandler, ...handlers);
+      const path = typeof pathOrHandler === 'string' ? normalizePath(pathOrHandler) : '/';
+      const allHandlers: ExpressHandler[] =
+        typeof pathOrHandler === 'function' ? [pathOrHandler, ...handlers] : handlers;
+
+      let middlewareGroup: ExpressHandler[] = [];
+      for (const h of allHandlers) {
+        if (isExpressRouter(h)) {
+          if (middlewareGroup.length > 0) {
+            routeStore.addMiddleware(path, ...middlewareGroup);
+            middlewareGroup = [];
+          }
+          const flat = flattenRouter(h, path);
+          if (flat !== null) {
+            routeStore.addEntries(flat);
+          } else {
+            routeStore.addMiddleware(path, h as ExpressHandler);
+          }
+        } else {
+          middlewareGroup.push(h);
+        }
+      }
+      if (middlewareGroup.length > 0) {
+        routeStore.addMiddleware(path, ...middlewareGroup);
       }
       return app;
     },
@@ -82,11 +103,11 @@ export function createApp(_options?: CreateAppOptions): ExpressLikeApp {
     },
 
     listen(
-      port?: number | (() => void),
-      host?: string | (() => void),
-      callback?: () => void
-    ): unknown {
-      let cb: (() => void) | undefined;
+      port?: number | ((err?: Error) => void),
+      host?: string | ((err?: Error) => void),
+      callback?: (err?: Error) => void
+    ): Promise<ServerLike> {
+      let cb: ((err?: Error) => void) | undefined;
       let p: number | undefined;
       let h: string | undefined;
       if (typeof port === 'function') {
@@ -119,14 +140,20 @@ export function createApp(_options?: CreateAppOptions): ExpressLikeApp {
       mountExpress(fastify, express);
 
       const listenOpts = { port: p ?? 0, host: h ?? '0.0.0.0' };
-      const promise = fastify.listen(listenOpts, (err) => {
-        if (err) throw err;
-        cb?.();
-      });
-      // Return a thenable that resolves to { close } so tests can close the server
-      return Promise.resolve(promise).then(() => ({
-        close: () => fastify.close(),
-      }));
+      const listenPromise = fastify.listen(listenOpts);
+      if (cb) {
+        listenPromise.then(() => cb(), (err) => cb?.(err));
+      }
+      return listenPromise.then(
+        (): ServerLike => ({
+          close(closeCb?) {
+            return fastify.close().then(() => closeCb?.(), (err) => closeCb?.(err));
+          },
+          address() {
+            return fastify.server?.address() ?? null;
+          },
+        })
+      );
     },
   };
 

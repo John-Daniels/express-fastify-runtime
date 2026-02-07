@@ -56,7 +56,8 @@ See the [project brief](#) for the exact layout. Key modules:
 
 ## Not supported (v1)
 
-- `express.Router()`, `res.locals`, runtime mutation of middleware stack (fail loudly if used).
+- `express.Router()` is supported: `app.use(path?, router)` flattens the router (including `router.use(path, fn)` and nested routers) so they can run on the Fastify lane. Load express-fastify-runtime before creating routers. RegExp or unsupported paths fall back to the Express lane.
+- `res.locals`, runtime mutation of middleware stack (fail loudly if used).
 
 ## Build, test & run
 

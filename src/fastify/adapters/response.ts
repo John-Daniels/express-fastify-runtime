@@ -54,8 +54,7 @@ export function createResponseAdapter(): (fastifyReply: FastifyReply, fastifyReq
   const res = {
     _reply: null as FastifyReply | null,
     status(code: number) {
-      const r = this._reply!;
-      r.raw.statusCode = code;
+      this._reply!.raw.statusCode = code;
       return this as unknown as ExpressResponse;
     },
     send(body?: unknown) {

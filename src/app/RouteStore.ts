@@ -21,6 +21,22 @@ export class RouteStore {
     this.entries.push({ type: 'route', method: m, path, handlers });
   }
 
+  /** Add a single entry (used when flattening Router). */
+  addEntry(entry: RouteEntry): void {
+    if (entry.type === 'route') {
+      this.addRoute(entry.method, entry.path, ...entry.handlers);
+    } else {
+      this.addMiddleware(entry.path, ...entry.handlers);
+    }
+  }
+
+  /** Add multiple entries (used when flattening Router). */
+  addEntries(entries: readonly RouteEntry[]): void {
+    for (const entry of entries) {
+      this.addEntry(entry);
+    }
+  }
+
   getAll(): readonly RouteEntry[] {
     return this.entries;
   }

@@ -10,7 +10,16 @@
     "test": "npm run build && node --test test/unit/path.test.js test/unit/detect.test.js test/unit/assert.test.js test/integration/app.test.js",
     "test:unit": "node --test test/unit/path.test.js test/unit/detect.test.js test/unit/assert.test.js",
     "test:integration": "node --test test/integration/app.test.js",
-    "benchmark": "node benchmarks/run.js",
+    "benchmark": "node benchmarks/summary/report.js",
+    "benchmark:servers": "node benchmarks/servers/run.js",
+    "benchmark:routes": "node benchmarks/server-routes/run.js",
+    "benchmark:json": "node benchmarks/json-db-test/run.js",
+    "benchmark:lowdb": "node benchmarks/low-db-test/run.js",
+    "benchmark:middleware": "node benchmarks/middleware-stack/run.js",
+    "benchmark:auth": "node benchmarks/auth/run.js",
+    "benchmark:crud": "node benchmarks/crud-todo/run.js",
+    "benchmark:payloads": "node benchmarks/payloads/run.js",
+    "benchmark:uploads": "node benchmarks/uploads/run.js",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
@@ -18,9 +27,18 @@
     "fastify": "^5.0.0"
   },
   "devDependencies": {
+    "@fastify/formbody": "^8.0.2",
+    "@fastify/helmet": "^13.0.2",
+    "@fastify/jwt": "^10.0.0",
+    "@fastify/multipart": "^9.4.0",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
     "autocannon": "^7.14.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.10.1",
+    "multer": "^2.0.2",
+    "type-is": "^2.0.1",
     "typescript": "^5.6.0"
   },
   "engines": {

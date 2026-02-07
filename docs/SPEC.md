@@ -105,6 +105,10 @@ test/                            # tests (see Test plan below)
 benchmarks/                      # express, fastify, node:http, express-fastify-runtime
 docs/
 └── SPEC.md                      # this file
+
+ai/                              # context for AI assistants
+├── README.md
+└── CONTEXT.md                   # full project memories (use with any AI)
 ```
 
 ---
@@ -149,7 +153,7 @@ Detection lives in `src/utils/detect.ts` (names + pattern heuristics). When in d
 
 ## 7. Body Parsing
 
-- `express.json()`: **intercepted** and mapped to Fastify’s JSON parser (same behavior, faster).
+- `express.json()`: **intercepted** and mapped to Fastify's JSON parser (same behavior, faster).
 - Multipart: **Express lane only**.
 
 ---
@@ -178,8 +182,9 @@ Detection lives in `src/utils/detect.ts` (names + pattern heuristics). When in d
 
 | Supported | Not supported (v1) |
 |-----------|-------------------|
-| `app.use(fn)`, `app.METHOD(path, ...handlers)` | `express.Router()` |
-| `req.body`, `req.query`, `req.params` | `res.locals` |
+| `app.use(fn)`, `app.use(path?, router)`, `app.METHOD(path, ...handlers)` | `res.locals` |
+| `express.Router()` (flattened when possible; else Express lane) | |
+| `req.body`, `req.query`, `req.params` | |
 | `res.status().send().json().set()` | Runtime mutation of middleware stack |
 | `next()`, async handlers | |
 | Global error middleware | |
@@ -244,7 +249,7 @@ Same scenario for all: e.g. N middleware + one JSON route; measure requests/sec 
 | Request/response adapters | ✅ | fastify/adapters |
 | Error handler bridge | ✅ | errorHandler.ts (to be wired to app API) |
 | express.json() interception | 🔲 | TODO in middleware.ts / compile |
-| res.locals / Router fail loudly | ✅ | assert.ts; Router not wired |
+| res.locals fail loudly; Router supported (flatten or Express lane) | ✅ | assert.ts; flattenRouter.ts, lifecycle use() |
 | Tests | 🔲 | test/ added; cases to expand |
 | Benchmarks | 🔲 | benchmarks/ added; run and compare |
 

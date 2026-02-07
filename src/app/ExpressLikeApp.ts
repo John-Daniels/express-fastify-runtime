@@ -4,7 +4,7 @@
  */
 
 import type { ExpressHandler } from '../types/express.js';
-import type { ExpressLikeApp as IExpressLikeApp } from '../types/internal.js';
+import type { ExpressLikeApp as IExpressLikeApp, ServerLike } from '../types/internal.js';
 import { assertNotLocked } from '../utils/assert.js';
 
 export function createExpressLikeApp(routeStore: import('./RouteStore.js').RouteStore, locked: { current: boolean }) {
@@ -68,11 +68,10 @@ export function createExpressLikeApp(routeStore: import('./RouteStore.js').Route
     },
 
     listen(
-      _port?: number | (() => void),
-      _host?: string | (() => void),
-      _callback?: () => void
-    ): unknown {
-      // Actual implementation is in lifecycle.ts which has access to Fastify/Express
+      _port?: number | ((err?: Error) => void),
+      _host?: string | ((err?: Error) => void),
+      _callback?: (err?: Error) => void
+    ): Promise<ServerLike> {
       throw new Error('Use createApp() from the main entry; listen() is implemented there.');
     },
   };

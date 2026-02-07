@@ -5,6 +5,18 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { ExpressRequest, ExpressResponse, ExpressHandler, HttpMethod } from './express.js';
 
+/**
+ * Server-like object returned by app.listen().
+ * Express returns http.Server; we return a Promise that resolves to this,
+ * so you can call close() (and address()) like with Node's server.
+ */
+export interface ServerLike {
+  /** Stop accepting new connections. Same idea as http.Server#close(). */
+  close(callback?: (err?: Error) => void): Promise<void>;
+  /** Bound address after listen (port, address, family). Same shape as http.Server#address(). */
+  address(): ReturnType<import('node:net').Server['address']>;
+}
+
 export type RouteEntry = {
   type: 'middleware';
   path: string;
@@ -35,9 +47,10 @@ export interface ExpressLikeApp {
   head(path: string, ...handlers: ExpressHandler[]): this;
   options(path: string, ...handlers: ExpressHandler[]): this;
   all(path: string, ...handlers: ExpressHandler[]): this;
-  listen(port?: number, host?: string, callback?: () => void): unknown;
-  listen(port: number, callback?: () => void): unknown;
-  listen(callback?: () => void): unknown;
+  /** Listen with optional port, host, and callback. Returns Promise<ServerLike> (Express returns http.Server; we are async). */
+  listen(port?: number, host?: string, callback?: (err?: Error) => void): Promise<ServerLike>;
+  listen(port: number, callback?: (err?: Error) => void): Promise<ServerLike>;
+  listen(callback?: (err?: Error) => void): Promise<ServerLike>;
 }
 
 export type RequestAdapter = (fastifyReq: FastifyRequest) => ExpressRequest;

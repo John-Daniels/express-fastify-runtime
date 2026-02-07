@@ -1,0 +1,112 @@
+{
+  "project": {
+    "name": "express-fastify-runtime",
+    "goal": "Run existing Express apps on Fastify safely, faster, and without code changes. Production middleware (morgan, helmet, express.json, auth, multer) must work.",
+    "whatItIs": "A hybrid runtime, not a wrapper. Fastify orchestrates; Express runs when required. Compile once at listen(); no dynamic routing."
+  },
+  "architecture": {
+    "summary": "Express-Compatible API → compile-time → Route Classifier (safe vs unsafe) → Fastify Lane (compiled) | Embedded Express Lane (real express() instance). Fastify orchestrates; Express runs when required.",
+    "fastifyLane": "Request hits Fastify → adapt req/res once → run compiled middleware (preHandler) → run route handler → send.",
+    "expressLane": "No Fastify route matched → setNotFoundHandler proxies raw req/res to real Express app → Express runs full stack → response back to Fastify."
+  },
+  "guarantees": {
+    "expressCompatibility": "Express apps run unchanged (same API, same middleware order and next()).",
+    "middlewareSafety": "morgan, helmet, express.json(), auth, multer must behave as in Express.",
+    "performance": "Hot paths on Fastify; unsafe paths on real Express. No silent behavior changes; fail fast in dev."
+  },
+  "designRules": [
+    "Routes immutable after listen() — app.use() / app.get() after listen() must throw.",
+    "Compile once — No runtime middleware resolution; no dynamic routing.",
+    "No guessing safety — If unsure → Express lane. Never silently downgrade.",
+    "Express lane = real Express — Use actual express() instance (engine.ts), not a reimplementation."
+  ],
+  "projectStructure": {
+    "src": {
+      "index.ts": "createApp() export",
+      "app": ["ExpressLikeApp.ts", "RouteStore.ts", "classify.ts", "compile.ts", "flattenRouter.ts"],
+      "fastify": ["register.ts", "adapters/request.ts", "adapters/response.ts", "adapters/middleware.ts"],
+      "express": ["engine.ts", "mount.ts", "middleware.ts"],
+      "runtime": ["lifecycle.ts", "populateExpress.ts", "decorators.ts", "errorHandler.ts"],
+      "utils": ["detect.ts", "assert.ts", "path.ts"],
+      "types": ["express.ts", "internal.ts"],
+      "examples": ["auth.ts", "uploads.ts", "logging.ts"]
+    },
+    "other": ["test/", "benchmarks/", "docs/", "ai/"]
+  },
+  "middlewareClassification": {
+    "fastifySafe": "(req, res, next), no streams, no prototype mutation, no req.app/res.locals. Examples: morgan, helmet, auth, validation.",
+    "expressRequired": "streams (req.pipe), multipart, Express internals. Examples: multer, storage.upload().",
+    "detection": "utils/detect.ts — isExpressRequired(), isFastifySafe(). If unsure → Express lane.",
+    "expressJson": "Intercepted and mapped to Fastify JSON parser. Multipart → Express lane only."
+  },
+  "listenAndServer": {
+    "overloads": ["app.listen(callback?)", "app.listen(port, callback?)", "app.listen(port, host, callback?)"],
+    "returnType": "Promise<ServerLike> — do not return unknown.",
+    "serverLike": "close(callback?), address(). We do not call process.exit; app calls server.close() when it wants to stop.",
+    "httpCreateServer": "Not supported; use app.listen()."
+  },
+  "optimizationPrinciples": [
+    "Zero alloc hot path — Reusable req/res (createRequestAdapter, createResponseAdapter); mutate per request.",
+    "Adapt once per request — preHandler adapts and attaches req/res (kExpressReq, kExpressRes); handler reuses them.",
+    "Sync-first handler loop — while loop, index-based next; await only when handler returns thenable.",
+    "One Promise when waiting — Only one new Promise + reply.raw.once('finish') when response not yet sent.",
+    "Same API, minimal shape — Small req/res surface; no full Express prototype chain."
+  ],
+  "supported": [
+    "app.use, app.METHOD, app.all, app.listen (overloads)",
+    "req.get, header, query, params, body, method, url, headers",
+    "res.status, send, json, set",
+    "next(), async handlers",
+    "express.json() → Fastify",
+    "route locking",
+    "ServerLike with close/address"
+  ],
+  "routerSupport": "app.use(path?, router) flattens the router (routes and router.use(path, fn)) when Layer is patched (load express-fastify-runtime before creating routers). Nested routers flattened recursively. RegExp paths → Express lane.",
+  "notSupportedFailLoudly": [
+    "res.locals",
+    "runtime mutation of middleware stack"
+  ],
+  "notYet": "app.set, app.render, req.accepts, res.redirect, etc. — see docs/EXPRESS_FEATURES.md",
+  "commands": {
+    "build": "npm run build",
+    "test": "npm test",
+    "benchmark": "npm run benchmark"
+  },
+  "implementationDetails": {
+    "routeStore": "RouteStore holds middleware and route entries until listen(). Then classify → compile → register Fastify routes + mount Express.",
+    "compile": "Only fastify-safe routes on Fastify. preHandler runs global middleware and attaches req/res; handler runs route handlers. Unsafe → Express (notFoundHandler proxies).",
+    "expressApp": "populateExpressApp() adds all entries to real Express app so Express lane has full stack.",
+    "types": "types/express.ts (Express-like); types/internal.ts (RouteEntry, ClassifiedRoute, ServerLike). Align with @types/express-serve-static-core where we support features."
+  },
+  "howToContinue": [
+    "Read ai/CONTEXT.md and docs/SPEC.md.",
+    "Run npm run build, npm test, npm run benchmark.",
+    "Pick item from acceptance criteria or not-yet features.",
+    "Change only listed modules; keep structure.",
+    "Update SPEC.md and EXPRESS_FEATURES.md when adding features."
+  ],
+  "acceptanceCriteria": [
+    "Existing Express app runs without modification",
+    "Auth middleware does not fail",
+    "Morgan logs correctly",
+    "Helmet headers correct",
+    "File uploads work via multer (Express lane)",
+    "Hot routes outperform plain Express",
+    "Unsafe routes work correctly on Express lane",
+    "No silent behavior changes; refactor, don't patch"
+  ],
+  "fileReference": {
+    "changeAppApiListen": ["src/runtime/lifecycle.ts", "src/types/internal.ts"],
+    "changeReqResShape": ["src/types/express.ts", "src/fastify/adapters/request.ts", "src/fastify/adapters/response.ts"],
+    "changeClassification": ["src/app/classify.ts", "src/utils/detect.ts"],
+    "changeCompilation": ["src/app/compile.ts", "src/fastify/register.ts"],
+    "changeExpressMount": ["src/express/mount.ts", "src/runtime/populateExpress.ts"],
+    "addExpressFeature": "docs/EXPRESS_FEATURES.md + relevant src",
+    "updateSpecStatus": ["docs/SPEC.md", "ai/CONTEXT.md", "ai/context.json"]
+  },
+  "aiFolderFiles": {
+    "CONTEXT.md": "Full context in markdown for pasting to AI.",
+    "context.json": "Same context in JSON for tools/scripts.",
+    "README.md": "Description of this folder."
+  }
+}

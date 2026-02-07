@@ -60,3 +60,23 @@ npm run benchmark -- --runtime
 ## Output
 
 You get requests/sec and latency percentiles for each stack so you can compare Express vs Fastify vs raw http vs express-fastify-runtime.
+
+---
+
+## Routes benchmark (Router + router.use)
+
+Compares **Express with Router** vs **express-fastify-runtime with Router** using the same shape as the integration test: `router.use('/auth', ...)` and `router.get('/auth/bar', ...)` mounted at `/api`. Hits **GET /api/auth/bar**.
+
+```bash
+npm run build
+npm run benchmark:routes
+```
+
+Or run a single target:
+
+```bash
+npm run benchmark:routes -- --express
+npm run benchmark:routes -- --runtime
+```
+
+Same env: `MW`, `PORT`, `DURATION`.

@@ -7,10 +7,14 @@ const app = express();
 
 app.use(express.json());
 
-app.use(morgan("combined"));
+// app.use(morgan("combined"));
 app.use("/api", router);
 
-const fastApp = fast(app);
+const fastApp = fast(app, {
+  fastify: {
+    logger: true,
+  },
+});
 await fastApp.ready();
 
 const server = fastApp.server;
@@ -38,5 +42,5 @@ io.on("connection", (socket) => {
 });
 
 server.listen(9001, () => {
-  console.log("Server is running on port 9000");
+  console.log("Server is running on port 9001");
 });

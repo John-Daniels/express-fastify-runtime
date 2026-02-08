@@ -14,15 +14,17 @@ import { assertNotLocked } from '../utils/assert.js';
 import { RouteStore } from '../app/RouteStore.js';
 import { isExpressRouter, flattenRouter } from '../app/flattenRouter.js';
 import { normalizePath } from '../utils/path.js';
+import { createRuntimeLogger } from '../utils/runtimeLogger.js';
 
 export interface CreateAppOptions {
-  /** If true, log compile and lane info (dev). */
+  /** If true, log compile and lane info (dev). Enables fallback warnings when downgrading to Express lane. */
   dev?: boolean;
 }
 
-export function createApp(_options?: CreateAppOptions): ExpressLikeApp {
+export function createApp(options?: CreateAppOptions): ExpressLikeApp {
   const routeStore = new RouteStore();
   const locked = { current: false };
+  const runtimeLogger = createRuntimeLogger(options);
 
   const app: ExpressLikeApp = {
     use(pathOrHandler: string | ExpressHandler, ...handlers: ExpressHandler[]) {
@@ -42,6 +44,7 @@ export function createApp(_options?: CreateAppOptions): ExpressLikeApp {
           if (flat !== null) {
             routeStore.addEntries(flat);
           } else {
+            runtimeLogger.warnDowngrade('express.Router (middleware or RegExp path)');
             routeStore.addMiddleware(path, h as ExpressHandler);
           }
         } else {
@@ -129,7 +132,10 @@ export function createApp(_options?: CreateAppOptions): ExpressLikeApp {
       const express = createExpressEngine();
       populateExpressApp(express, routeStore);
 
-      const fastify = Fastify({ logger: false });
+      const fastify = Fastify({
+  logger: false,
+  bodyLimit: 10 * 1024 * 1024, // 10MB; matches express.json({ limit: '10mb' }) for large payloads
+});
       const classified = classifyAll(routeStore.getAll());
       const runMiddleware = (
         _req: import('../types/express.js').ExpressRequest,

@@ -15,6 +15,7 @@ This list is derived from the **Express 5.x** codebase (`lib/application.js`, `l
 | **app.listen(port, callback?)** | ✅ returns `http.Server` | ✅ Supported — returns `Promise<ServerLike>` (async) |
 | **app.listen(port, host, callback?)** | ✅ | ✅ Supported |
 | **app.listen(callback?)** | ✅ | ✅ Supported |
+| **createApp(options?)** | N/A | ✅ `options.dev` enables fallback warnings when downgrading to Express lane |
 | **app.route(path)** | ✅ returns Router#route() | ❌ Not yet (v1: fail loudly if used) |
 | **app.engine(ext, fn)** | ✅ | ❌ Not yet |
 | **app.param(name, fn)** | ✅ | ❌ Not yet |
@@ -133,7 +134,17 @@ Express returns the Node `http.Server` from `listen()`. We return a **Promise** 
 
 ---
 
+## Fallback behavior (dev warnings)
+
+When a feature is not fully supported but can run on the **Express lane**, we fall back to the real Express app and log a warning in development so you know to open an issue if you need full support.
+
+- **When:** `createApp({ dev: true })` or `NODE_ENV !== 'production'`.
+- **Message:** `[express-fastify-runtime] <Feature> is not supported fully yet, downgrading to express pattern (create an issue if this is something you would like express-runtime to support)`.
+- **Example:** `express.Router()` with middleware or RegExp path cannot be flattened → router is mounted as one middleware on Express lane; in dev the warning is logged. No pino dependency; uses `console.warn`.
+
+---
+
 ## Summary
 
-- **Supported:** `app.use`, `app.METHOD`, `app.all`, `app.listen` (with overloads), `req.get`/`header`, `req.query`/`params`/`body`/`method`/`url`/`headers`, `res.status`/`send`/`json`/`set`, `next()`, async handlers, `express.json()` (mapped to Fastify), route locking after `listen()`, `ServerLike` with `close()` and `address()`.
-- **Not yet:** Route (internal), `res.locals`, app settings (set/get/enable/disable), views (engine/render), param middleware, cookies, redirect, sendFile, static, and most req/res helpers (accepts, protocol, ip, etc.). Unsupported features either fail loudly (e.g. res.locals) or are not implemented yet.
+- **Supported:** `app.use`, `app.METHOD`, `app.all`, `app.listen` (with overloads), `express.Router()` (flattened when possible; else Express lane + dev warn), `req.get`/`header`, `req.query`/`params`/`body`/`method`/`url`/`headers`, `res.status`/`send`/`json`/`set`, `next()`, async handlers, `express.json()` (mapped to Fastify), route locking after `listen()`, `ServerLike` with `close()` and `address()`.
+- **Not yet:** Route (internal), `res.locals`, app settings (set/get/enable/disable), views (engine/render), param middleware, cookies, redirect, sendFile, static, and most req/res helpers (accepts, protocol, ip, etc.). Unsupported features either fail loudly (e.g. res.locals) or fall back to Express lane with a dev warning where applicable.

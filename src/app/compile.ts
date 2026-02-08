@@ -9,11 +9,13 @@ import type { ClassifiedRoute } from "../types/internal.js";
 import type {
   ExpressRequest,
   ExpressResponse,
+  ExpressHandler,
   NextFunction,
 } from "../types/express.js";
 import type { RequestAdapter } from "../types/internal.js";
 import type { ResponseAdapter } from "../types/internal.js";
 import { normalizePath } from "../utils/path.js";
+import { isExpressJson, expressJsonPassthrough } from "../express/middleware.js";
 
 export type RunMiddleware = (
   req: ExpressRequest,
@@ -31,6 +33,7 @@ function pathMatches(middlewarePath: string, routePath: string): boolean {
 
 /**
  * Run middleware chain: sync-first loop, only await when handler returns thenable.
+ * Uses nextCalled (not index comparison) so we correctly stop when a handler does not call next().
  */
 async function runMiddlewareChain(
   handlers: Array<
@@ -85,13 +88,18 @@ function buildPreHandlersForPath(
     const path = c.path === "/" ? "/" : normalizePath(c.path);
     if (!pathMatches(path, routePath)) continue;
     for (const h of c.handlers) {
-      applicable.push(
-        h as (
-          req: ExpressRequest,
-          res: ExpressResponse,
-          next: NextFunction,
-        ) => void,
-      );
+      const fn = isExpressJson(h as ExpressHandler)
+        ? (expressJsonPassthrough() as (
+            req: ExpressRequest,
+            res: ExpressResponse,
+            next: NextFunction,
+          ) => void)
+        : (h as (
+            req: ExpressRequest,
+            res: ExpressResponse,
+            next: NextFunction,
+          ) => void);
+      applicable.push(fn);
     }
   }
   return async (request: RequestWithExpress, reply: FastifyReply) => {
@@ -174,7 +182,11 @@ export function registerFastifyRoutes(
       adaptRequest,
       adaptResponse,
     );
-    const handlers = entry.handlers;
+    const handlers = (entry.handlers as ExpressHandler[]).map((h) =>
+      isExpressJson(h) ? expressJsonPassthrough() : h,
+    ) as Array<
+      (req: ExpressRequest, res: ExpressResponse, next: NextFunction) => void
+    >;
 
     for (const m of methods) {
       fastify.route({

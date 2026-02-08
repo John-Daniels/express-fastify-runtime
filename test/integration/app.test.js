@@ -5,8 +5,10 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import crypto from 'node:crypto';
 import { createApp } from '../../dist/index.js';
 import { Router } from 'express';
+import express from 'express';
 
 describe('createApp', () => {
   it('returns app with use, get, post, listen', () => {
@@ -72,6 +74,43 @@ describe('createApp', () => {
     const res = await fetch(`http://127.0.0.1:${addr.port}/api/auth/bar`);
     assert.strictEqual(res.status, 200);
     assert.deepStrictEqual(await res.json(), { from: 'router-with-use' });
+    await server.close();
+  });
+});
+
+describe('large JSON payload (regression)', () => {
+  it('POST 1MB JSON with express.json() parses once, req.body available, latency < 500ms', async () => {
+    const size = 1024 * 1024; // 1MB
+    const payload = { data: crypto.randomBytes(size).toString('hex').slice(0, size) };
+    const body = JSON.stringify(payload);
+
+    const app = createApp();
+    app.use(express.json({ limit: '10mb' }));
+    let receivedBody = null;
+    app.post('/', (req, res) => {
+      receivedBody = req.body;
+      res.json({ ok: true, size: req.body?.data?.length ?? 0 });
+    });
+
+    const server = await app.listen(0);
+    const addr = server.address();
+    assert.ok(addr && typeof addr === 'object' && addr.port);
+
+    const start = Date.now();
+    const res = await fetch(`http://127.0.0.1:${addr.port}/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+    const elapsed = Date.now() - start;
+
+    assert.strictEqual(res.status, 200);
+    const json = await res.json();
+    assert.strictEqual(json.ok, true);
+    assert.strictEqual(json.size, payload.data.length);
+    assert.ok(receivedBody && receivedBody.data?.length === payload.data.length, 'req.body has parsed data with correct length');
+    assert.ok(elapsed < 500, `1MB JSON should complete in <500ms (was ${elapsed}ms)`);
+
     await server.close();
   });
 });

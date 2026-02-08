@@ -1,5 +1,6 @@
 /**
  * Internal compiler and runtime types.
+ * use() accepts Express Router so app.use("/api", router) type-checks (Express-compatible).
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
@@ -9,7 +10,7 @@ import type {
   ExpressHandler,
   HttpMethod,
 } from "./express.js";
-import { Application } from "express";
+import type { Application, Router } from "express";
 
 /**
  * Server-like object returned by app.listen().
@@ -44,11 +45,14 @@ export type ClassifiedRoute = RouteEntry & {
   expressRequired: boolean;
 };
 
+/** Handlers accepted in use(); includes Router so app.use("/api", router) type-checks. */
+export type UseHandler = ExpressHandler | Router;
+
 export interface ExpressLikeApp {
-  use(...handlers: ExpressHandler[]): this;
+  use(...handlers: UseHandler[]): this;
   use(
-    pathOrHandler: string | ExpressHandler,
-    ...handlers: ExpressHandler[]
+    pathOrHandler: string | UseHandler,
+    ...handlers: UseHandler[]
   ): this;
   get(path: string, ...handlers: ExpressHandler[]): this;
   post(path: string, ...handlers: ExpressHandler[]): this;

@@ -32,6 +32,8 @@ app.get('/api/users', (req, res) => res.json({ users: [] }));
 app.listen(3000, () => console.log('Listening on 3000'));
 ```
 
+**Import order:** If you use `express.Router()` with middleware (e.g. `router.use(morgan('combined'))`), import **express-fastify-runtime** before any file that uses Express or Router, so the runtime can detect middleware paths and keep the router on the Fastify lane. Otherwise the router is still supported but runs on the Express lane and a dev warning is logged.
+
 ## Project structure
 
 See the [project brief](#) for the exact layout. Key modules:

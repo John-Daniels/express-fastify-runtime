@@ -6,7 +6,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import crypto from 'node:crypto';
-import { createApp } from '../../dist/index.js';
+import { createApp, fast } from '../../dist/index.js';
 import { Router } from 'express';
 import express from 'express';
 
@@ -112,5 +112,20 @@ describe('large JSON payload (regression)', () => {
     assert.ok(elapsed < 500, `1MB JSON should complete in <500ms (was ${elapsed}ms)`);
 
     await server.close();
+  });
+});
+
+describe('fast(expressApp)', () => {
+  it('compiles Express app and returns Fastify instance; GET responds', async () => {
+    const app = express();
+    app.get('/ping', (req, res) => res.json({ pong: true }));
+    const fastify = fast(app);
+    await fastify.listen({ port: 0, host: '127.0.0.1' });
+    const addr = fastify.server?.address();
+    assert.ok(addr && typeof addr === 'object' && addr.port);
+    const res = await fetch(`http://127.0.0.1:${addr.port}/ping`);
+    assert.strictEqual(res.status, 200);
+    assert.deepStrictEqual(await res.json(), { pong: true });
+    await fastify.close();
   });
 });

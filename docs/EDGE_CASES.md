@@ -96,6 +96,12 @@ This doc lists edge cases that can break “drop-in Express” behavior. Correct
 
 ---
 
+## fast(app) API
+
+- **fastApp.server** is the Node HTTP server; you can attach WebSockets, Socket.IO, etc. to it. **server.listen(port, callback)** is supported: it is wrapped to delegate to Fastify’s `listen()` so 404 and other internals work. Use either `fastApp.listen({ port }, cb)` or `server.listen(port, cb)`.
+
+---
+
 ## Benchmark / test additions (correctness first)
 
 - `benchmarks/edge-cases/` or tests: errors (throw, next(err), error handler), aborts, double-send, headersSent, originalUrl/baseUrl/path, streaming, redirect, trust-proxy.

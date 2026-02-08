@@ -80,3 +80,12 @@ npm run benchmark:routes -- --runtime
 ```
 
 Same env: `MW`, `PORT`, `DURATION`.
+
+---
+
+## Why Fastify sometimes wins (and when we match)
+
+- **Payloads (1KB / 1MB JSON):** We use Fastify’s native JSON parser and map it to `req.body`; we skip `express.json()` on the Fastify path. So we are within ~±20% of plain Fastify for large JSON.
+- **Uploads (multipart):** Our benchmark uses **multer** (Express lane). Multipart is Express-required, so the request is proxied to the real Express app. Plain Fastify uses `@fastify/multipart`, which is native and much faster. The gap is expected: we don’t reimplement multer on Fastify.
+- **Auth (JWT):** Our benchmark uses the same **userland** `jwt.verify()` middleware on all stacks. Plain Fastify uses `@fastify/jwt` with `request.jwtVerify()`, which is a native plugin. So Fastify wins on auth because of the plugin, not because our adapter is slow.
+- **CRUD / middleware stack:** We are close to Fastify when the workload is “middleware + route”; any gap is from adapter cost and sync middleware loop, which we keep minimal (see `docs/OPTIMIZATION.md`).

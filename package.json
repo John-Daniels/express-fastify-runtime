@@ -18,7 +18,12 @@
     "middleware",
     "migration"
   ],
-  "files": ["dist", "README.md", "LICENSE", "changelog"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "changelog"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "npm run build && node --test test/unit/path.test.js test/unit/detect.test.js test/unit/assert.test.js test/unit/express-middleware.test.js test/integration/app.test.js",
@@ -46,6 +51,7 @@
     "@fastify/jwt": "^10.0.0",
     "@fastify/multipart": "^9.4.0",
     "@types/express": "^5.0.0",
+    "@types/morgan": "^1.9.10",
     "@types/node": "^22.0.0",
     "autocannon": "^7.14.0",
     "helmet": "^8.1.0",

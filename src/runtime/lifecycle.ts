@@ -3,7 +3,7 @@
  */
 
 import Fastify from 'fastify';
-import type { ExpressLikeApp, ServerLike } from '../types/internal.js';
+import type { ExpressLikeApp, ServerLike, UseHandler } from '../types/internal.js';
 import type { ExpressHandler } from '../types/express.js';
 import { classifyAll } from '../app/classify.js';
 import { createExpressEngine } from '../express/engine.js';
@@ -27,11 +27,11 @@ export function createApp(options?: CreateAppOptions): ExpressLikeApp {
   const runtimeLogger = createRuntimeLogger(options);
 
   const app: ExpressLikeApp = {
-    use(pathOrHandler: string | ExpressHandler, ...handlers: ExpressHandler[]) {
+    use(pathOrHandler: string | UseHandler, ...handlers: UseHandler[]) {
       assertNotLocked(locked.current);
       const path = typeof pathOrHandler === 'string' ? normalizePath(pathOrHandler) : '/';
-      const allHandlers: ExpressHandler[] =
-        typeof pathOrHandler === 'function' ? [pathOrHandler, ...handlers] : handlers;
+      const allHandlers: UseHandler[] =
+        typeof pathOrHandler === 'string' ? handlers : [pathOrHandler, ...handlers];
 
       let middlewareGroup: ExpressHandler[] = [];
       for (const h of allHandlers) {
@@ -44,11 +44,13 @@ export function createApp(options?: CreateAppOptions): ExpressLikeApp {
           if (flat !== null) {
             routeStore.addEntries(flat);
           } else {
-            runtimeLogger.warnDowngrade('express.Router (middleware or RegExp path)');
+            runtimeLogger.warnDowngrade(
+              'express.Router (middleware or RegExp path). Tip: import express-fastify-runtime before Express or routers so middleware paths can be detected'
+            );
             routeStore.addMiddleware(path, h as ExpressHandler);
           }
         } else {
-          middlewareGroup.push(h);
+          middlewareGroup.push(h as ExpressHandler);
         }
       }
       if (middlewareGroup.length > 0) {

@@ -50,13 +50,14 @@ Fastify Lane         Embedded Express Lane
 
 ```
 src/
-├── index.ts                     # createApp() export
+├── index.ts                     # createApp(), fast() export
 ├── app/
 │   ├── ExpressLikeApp.ts        # stub; real impl in lifecycle
 │   ├── RouteStore.ts            # stores routes + middleware
 │   ├── classify.ts              # safe vs express-required
 │   ├── compile.ts               # compile to Fastify (preHandler + routes)
-│   └── flattenRouter.ts          # isExpressRouter, flattenRouter (Router → RouteEntry[])
+│   ├── flattenRouter.ts         # isExpressRouter, flattenRouter (Router → RouteEntry[])
+│   └── introspectExpress.ts     # introspectExpressApp(app) for fast()
 ├── fastify/
 │   ├── register.ts              # registerCompiledRoutes
 │   └── adapters/
@@ -69,6 +70,7 @@ src/
 │   └── middleware.ts            # isExpressJson, expressJsonPassthrough
 ├── runtime/
 │   ├── lifecycle.ts             # createApp(), boot, lock, listen
+│   ├── fast.ts                  # fast(app, ops) — compile existing Express app, return Fastify
 │   ├── populateExpress.ts      # add all routes to Express app
 │   ├── decorators.ts            # req/res decoration
 │   └── errorHandler.ts          # wrapErrorHandler
@@ -123,7 +125,7 @@ ai/            # this folder — CONTEXT.md
 
 ## 9. Supported vs not (v1)
 
-**Supported:** app.use, app.METHOD, app.all, app.listen (overloads above); req.get/header, query, params, body, method, url, headers; res.status, send, json, set; next(); async handlers; express.json() → Fastify; route locking; ServerLike with close/address.
+**Supported:** app.use, app.METHOD, app.all, app.listen (overloads above); **fast(app, ops)** to compile an existing Express app onto Fastify (returns Fastify instance); req.get/header, query, params, body, method, url, headers; res.status, send, json, set; next(); async handlers; express.json() → Fastify; route locking; ServerLike with close/address.
 
 **express.Router():** Supported. `app.use(path?, router)` flattens the router so routes and middleware can run on the Fastify lane. We patch the router package's Layer (see utils/patchRouterLayer.ts) to store the path on each layer as `_path`; then flattenRouter can flatten router.use(path, fn) and nested routers. Load express-fastify-runtime before creating routers so the patch is applied. If any middleware layer has no path (e.g. RegExp path), that router is mounted as a single unit on the Express lane. **Not supported / fail loudly:** res.locals, runtime mutation of middleware stack. Other Express features (app.set, app.render, req.accepts, res.redirect, etc.) are "not yet" — see docs/EXPRESS_FEATURES.md.
 
@@ -174,6 +176,7 @@ ai/            # this folder — CONTEXT.md
 | Need to…              | File(s) |
 |-----------------------|--------|
 | Change app API/listen | src/runtime/lifecycle.ts, src/types/internal.ts |
+| Change fast() API     | src/runtime/fast.ts, src/app/introspectExpress.ts |
 | Change req/res shape  | src/types/express.ts, src/fastify/adapters/request.ts, response.ts |
 | Change classification | src/app/classify.ts, src/utils/detect.ts |
 | Change compilation    | src/app/compile.ts, src/fastify/register.ts |

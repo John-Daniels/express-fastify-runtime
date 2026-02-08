@@ -7,5 +7,7 @@ import './utils/patchRouterLayer.js';
 
 export { createApp } from './runtime/lifecycle.js';
 export type { CreateAppOptions } from './runtime/lifecycle.js';
-export type { ServerLike } from './types/internal.js';
+export { fast } from './runtime/fast.js';
+export type { FastOps } from './runtime/fast.js';
+export type { ServerLike, UseHandler } from './types/internal.js';
 export type { ExpressRequest, ExpressResponse, NextFunction, ExpressMiddleware, ExpressHandler } from './types/express.js';

@@ -9,6 +9,9 @@ export type ExpressRequest = IncomingMessage & {
   body?: unknown;
   query?: Record<string, string | string[]>;
   params?: Record<string, string>;
+  url: string;
+  baseUrl: string;
+  originalUrl: string;
   get(name: string): string | undefined;
   header(name: string): string | undefined;
 };

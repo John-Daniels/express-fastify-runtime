@@ -22,8 +22,9 @@ if (process.argv.includes("--express")) targets.push("express");
 if (process.argv.includes("--fastify")) targets.push("fastify");
 if (process.argv.includes("--node-http")) targets.push("node-http");
 if (process.argv.includes("--runtime")) targets.push("express-fastify-runtime");
+if (process.argv.includes("--runtime-fast")) targets.push("express-fastify-runtime-fast");
 if (targets.length === 0) {
-  targets.push("express", "fastify", "node-http", "express-fastify-runtime");
+  targets.push("express", "fastify", "node-http", "express-fastify-runtime", "express-fastify-runtime-fast");
 }
 
 const ports = {
@@ -31,6 +32,7 @@ const ports = {
   fastify: BASE_PORT + 1,
   "node-http": BASE_PORT + 2,
   "express-fastify-runtime": BASE_PORT + 3,
+  "express-fastify-runtime-fast": BASE_PORT + 4,
 };
 
 const serverFiles = {
@@ -38,6 +40,7 @@ const serverFiles = {
   fastify: join(__dirname, "fastify.js"),
   "node-http": join(__dirname, "node-http.js"),
   "express-fastify-runtime": join(__dirname, "express-fastify-runtime.js"),
+  "express-fastify-runtime-fast": join(__dirname, "express-fastify-runtime-fast.js"),
 };
 
 function waitForPort(port, timeoutMs = 8000) {

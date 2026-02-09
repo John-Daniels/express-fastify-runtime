@@ -7,8 +7,17 @@ const app = express();
 
 app.use(express.json());
 
-// app.use(morgan("combined"));
+app.use(morgan("dev"));
 app.use("/api", router);
+
+app.get("/fail", () => {
+  throw new Error("Unexpected error");
+});
+
+// Express 5: thrown errors are passed to 4-arg error middleware automatically
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  res.status(500).json({ error: err.message });
+});
 
 const fastApp = fast(app, {
   fastify: {

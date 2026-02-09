@@ -83,6 +83,10 @@ export function createResponseAdapter(): (fastifyReply: FastifyReply, fastifyReq
       }
       return this as unknown as ExpressResponse;
     },
+    setHeader(name: string, value: string | number | string[]) {
+      this._reply!.raw.setHeader(name, value as string);
+      return this as unknown as ExpressResponse;
+    },
   } as ExpressResponse & { _reply: FastifyReply | null };
 
   return (fastifyReply: FastifyReply) => {

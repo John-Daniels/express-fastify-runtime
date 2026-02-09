@@ -4,36 +4,63 @@
  * creating the Express app so router Layer has _path (see patchRouterLayer) for middleware.
  */
 
-import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
-import type { Application } from 'express';
-import { classifyAll } from '../app/classify.js';
-import { introspectExpressApp } from '../app/introspectExpress.js';
-import { mountExpress } from '../express/mount.js';
-import { registerCompiledRoutes } from '../fastify/register.js';
-import type { ExpressRequest, ExpressResponse, NextFunction } from '../types/express.js';
+import type { Server } from "node:http";
+import type { ListenOptions } from "node:net";
+import Fastify, {
+  type FastifyInstance,
+  type FastifyServerOptions,
+} from "fastify";
+import type { Application } from "express";
+import { classifyAll } from "../app/classify.js";
+import {
+  introspectExpressApp,
+  getExpressErrorMiddleware,
+  type ExpressAppLike,
+} from "../app/introspectExpress.js";
+import { mountExpress } from "../express/mount.js";
+import { createRequestAdapter } from "../fastify/adapters/request.js";
+import {
+  createResponseAdapter,
+  adaptResponse as adaptResponseOneShot,
+} from "../fastify/adapters/response.js";
+import { registerCompiledRoutes } from "../fastify/register.js";
+import { wrapErrorHandler } from "./errorHandler.js";
+import type {
+  ExpressRequest,
+  ExpressResponse,
+  NextFunction,
+} from "../types/express.js";
+
+// Types for the server.listen wrapper (readable names, no inline imports)
+type ListenCallback = (err: Error | null, address: string) => void;
+interface ListenOptionsResult {
+  port: number;
+  host?: string;
+  cb?: ListenCallback;
+}
+
+/** Options for fast(app, ops). More keys can be added later. */
+export interface FastOps {
+  fastify?: FastifyServerOptions;
+}
 
 const DEFAULT_OPTS: FastifyServerOptions = {
   logger: false,
   bodyLimit: 10 * 1024 * 1024, // 10MB; matches express.json({ limit: '10mb' })
 };
 
-/**
- * Options for fast(). Same as FastifyServerOptions; used when creating the Fastify instance.
- */
-export type FastOps = FastifyServerOptions;
-
-/** Normalize Node server.listen(...) args to Fastify listen options. */
 function listenArgsToOptions(
   port?: number,
   hostOrBacklogOrCb?: string | number | (() => void),
-  cb?: () => void
-): { port: number; host?: string; cb?: (err: Error | null, address: string) => void } {
-  const options: { port: number; host?: string; cb?: (err: Error | null, address: string) => void } = {
-    port: typeof port === 'number' ? port : 0,
+  cb?: () => void,
+): ListenOptionsResult {
+  const options: ListenOptionsResult = {
+    port: typeof port === "number" ? port : 0,
   };
-  if (typeof hostOrBacklogOrCb === 'string') options.host = hostOrBacklogOrCb;
-  else if (typeof hostOrBacklogOrCb === 'function') options.cb = hostOrBacklogOrCb as (err: Error | null, address: string) => void;
-  if (typeof cb === 'function') options.cb = cb as (err: Error | null, address: string) => void;
+  if (typeof hostOrBacklogOrCb === "string") options.host = hostOrBacklogOrCb;
+  else if (typeof hostOrBacklogOrCb === "function")
+    options.cb = hostOrBacklogOrCb as ListenCallback;
+  if (typeof cb === "function") options.cb = cb as ListenCallback;
   return options;
 }
 
@@ -48,44 +75,71 @@ function listenArgsToOptions(
  * server.listen() is wrapped to delegate to Fastify's listen() so 404 and internals work.
  * When using Fastify plugins, await fastApp.ready() before listen so plugins are loaded.
  */
-export function fast(app: Application, ops?: FastOps): FastifyInstance {
-  const fastify = Fastify({ ...DEFAULT_OPTS, ...ops });
+export function fast(
+  app: Application,
+  ops?: FastOps | FastifyServerOptions,
+): FastifyInstance {
+  const fastifyOpts =
+    ops && "fastify" in ops
+      ? ops.fastify
+      : (ops as FastifyServerOptions | undefined);
+  const fastify = Fastify({ ...DEFAULT_OPTS, ...fastifyOpts });
 
-  const entries = introspectExpressApp(app as unknown as import('../app/introspectExpress.js').ExpressAppLike);
+  const entries = introspectExpressApp(app as unknown as ExpressAppLike);
   if (entries !== null && entries.length > 0) {
     const classified = classifyAll(entries);
-    const noop: (req: ExpressRequest, res: ExpressResponse, next: NextFunction) => void = (_req, _res, next) => next();
+    const noop: (
+      req: ExpressRequest,
+      res: ExpressResponse,
+      next: NextFunction,
+    ) => void = (_req, _res, next) => next();
     registerCompiledRoutes(fastify, classified, noop);
   }
 
   mountExpress(fastify, app);
 
+  const expressErrorMiddleware = getExpressErrorMiddleware(app as unknown as ExpressAppLike);
+  if (expressErrorMiddleware) {
+    const adaptRequest = createRequestAdapter();
+    fastify.setErrorHandler(
+      wrapErrorHandler(expressErrorMiddleware, adaptRequest, adaptResponseOneShot)
+    );
+  }
+
   // Wrap server.listen so Express-style server.listen(port, cb) runs Fastify's listen flow
   // (fixes 404 / fourOhFourContext). When Fastify's listen() runs it calls server.listen(opts)
   // again — we detect that re-entry and delegate to the real Node listen to avoid "already listening".
-  const server = fastify.server as import('node:http').Server;
+  const server = fastify.server as Server;
   const originalListen = server.listen.bind(server);
   let listenReentry = false;
-  const wrappedListen = function (
-    this: import('node:http').Server,
-    port?: number | import('node:net').ListenOptions,
+
+  function wrappedListen(
+    this: Server,
+    port?: number | ListenOptions,
     hostOrBacklogOrCb?: string | number | (() => void),
-    cb?: () => void
-  ): import('node:http').Server {
+    cb?: () => void,
+  ): Server {
     if (listenReentry) {
       listenReentry = false;
-      return (originalListen as (...args: unknown[]) => import('node:http').Server).apply(this, arguments as unknown as unknown[]) as import('node:http').Server;
+      return (originalListen as (...args: unknown[]) => Server).apply(
+        this,
+        arguments as unknown as unknown[],
+      ) as Server;
     }
-    const fastifyCb = (err: Error | null, address: string) => {
+    const fastifyCb: ListenCallback = (err, address) => {
       if (userCb) userCb(err, address);
     };
-    let userCb: ((err: Error | null, address: string) => void) | undefined;
-    if (typeof port === 'object' && port !== null && 'port' in port) {
+    let userCb: ListenCallback | undefined;
+    if (typeof port === "object" && port !== null && "port" in port) {
       const opts = port as { port?: number; host?: string };
-      userCb = typeof hostOrBacklogOrCb === 'function' ? (hostOrBacklogOrCb as (err: Error | null, address: string) => void) : undefined;
+      userCb =
+        typeof hostOrBacklogOrCb === "function"
+          ? (hostOrBacklogOrCb as ListenCallback)
+          : undefined;
       listenReentry = true;
       try {
-        if (userCb) fastify.listen({ port: opts.port ?? 0, host: opts.host }, fastifyCb);
+        if (userCb)
+          fastify.listen({ port: opts.port ?? 0, host: opts.host }, fastifyCb);
         else fastify.listen({ port: opts.port ?? 0, host: opts.host });
       } catch (e) {
         listenReentry = false;
@@ -94,21 +148,24 @@ export function fast(app: Application, ops?: FastOps): FastifyInstance {
       return this;
     }
     const options = listenArgsToOptions(
-      typeof port === 'number' ? port : 0,
+      typeof port === "number" ? port : 0,
       hostOrBacklogOrCb,
-      cb
+      cb,
     );
     userCb = options.cb;
     listenReentry = true;
     try {
-      if (userCb) fastify.listen({ port: options.port, host: options.host }, fastifyCb);
+      if (userCb)
+        fastify.listen({ port: options.port, host: options.host }, fastifyCb);
       else fastify.listen({ port: options.port, host: options.host });
     } catch (e) {
       listenReentry = false;
       throw e;
     }
     return this;
-  };
+  }
+
+  // Node's listen has many overloads; our wrapper is compatible at runtime
   (server as { listen: typeof wrappedListen }).listen = wrappedListen;
 
   return fastify;

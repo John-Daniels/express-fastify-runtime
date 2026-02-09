@@ -18,11 +18,19 @@ export function adaptRequest(fastifyReq: FastifyRequest): ExpressRequest {
 
 /** Creates a reusable request adapter: one req object, mutated per request (zero alloc). */
 export function createRequestAdapter(): (fastifyReq: FastifyRequest) => ExpressRequest {
-  const req = {
-    _raw: null as import('node:http').IncomingMessage | null,
-    _query: {} as Record<string, string | string[]>,
-    _params: {} as Record<string, string>,
-    _body: undefined as unknown,
+  const req: ExpressRequest & {
+    _raw: import('node:http').IncomingMessage | null;
+    _query: Record<string, string | string[]>;
+    _params: Record<string, string>;
+    _body: unknown;
+  } = {
+    _raw: null,
+    _query: {},
+    _params: {},
+    _body: undefined,
+    url: '',
+    baseUrl: '',
+    originalUrl: '',
     get(name: string) {
       return this._raw?.headers[name?.toLowerCase()] as string | undefined;
     },
@@ -31,9 +39,6 @@ export function createRequestAdapter(): (fastifyReq: FastifyRequest) => ExpressR
     },
     get method() {
       return this._raw?.method;
-    },
-    get url() {
-      return this._raw?.url;
     },
     get headers() {
       return this._raw?.headers ?? {};
@@ -45,8 +50,12 @@ export function createRequestAdapter(): (fastifyReq: FastifyRequest) => ExpressR
     _body: unknown;
   };
 
-  return (fastifyReq: FastifyRequest) => {
+  return (fastifyReq: FastifyRequest): ExpressRequest => {
     req._raw = fastifyReq.raw;
+    const rawUrl = fastifyReq.raw?.url ?? '/';
+    req.url = rawUrl;
+    req.originalUrl = rawUrl;
+    req.baseUrl = '';
     req._query = (fastifyReq as FastifyRequest & { query?: Record<string, string | string[]> }).query ?? {};
     req._params = (fastifyReq as FastifyRequest & { params?: Record<string, string> }).params ?? {};
     req._body = (fastifyReq as FastifyRequest & { body?: unknown }).body;

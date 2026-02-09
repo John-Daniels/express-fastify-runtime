@@ -63,8 +63,8 @@ This list is derived from the **Express 5.x** codebase (`lib/application.js`, `l
 | **req.xhr** | ✅ | ❌ Not yet |
 | **req.cookies** | ✅ | ❌ Not yet |
 | **req.signedCookies** | ✅ | ❌ Not yet |
-| **req.originalUrl** | ✅ | ❌ Not yet |
-| **req.baseUrl** | ✅ | ❌ Not yet |
+| **req.originalUrl** | ✅ | ✅ Supported (fast() request adapter; writable for router) |
+| **req.baseUrl** | ✅ | ✅ Supported (fast() request adapter; writable for router) |
 | **req.app** | ✅ | ❌ Not yet |
 | **req.res** | ✅ | ❌ Not yet |
 | **req.next** | ✅ | ❌ Not yet |

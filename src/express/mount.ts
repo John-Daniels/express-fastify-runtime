@@ -6,21 +6,57 @@
  * We must wait for Express to finish (call next or send the response) before returning from
  * the notFoundHandler; otherwise Fastify sends its default response and then Express tries to
  * send again → "Cannot set headers after they are sent".
+ *
+ * Body: Fastify parses application/json (and other types) by default and consumes the request
+ * stream. So when we pass request.raw to Express, the body stream is already consumed and
+ * express.json() would read nothing. We attach Fastify's parsed body to the request we pass
+ * so req.body is available on the Express lane.
  */
 
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { Application } from 'express';
+
+/** Express app signature: (req, res, next) => void */
+type ExpressRequestListener = (
+  req: IncomingMessage,
+  res: ServerResponse,
+  next: (err?: Error) => void,
+) => void;
+
+/** Request with optional body (Express lane uses raw + body from Fastify). */
+export type IncomingMessageWithBody = IncomingMessage & { body?: unknown };
 
 /**
  * Mount Express app so that unhandled Fastify requests are proxied to it.
  * Uses the raw Node request/response so Express middleware and res.render() work.
  * Awaits until Express calls the done callback (or the response is finished) so Fastify
  * does not send a default response before Express has sent.
+ * Attaches Fastify's parsed request.body to the request so req.body is available in Express.
  */
 export function mountExpress(fastify: FastifyInstance, expressApp: Application): void {
   fastify.setNotFoundHandler(async (request: FastifyRequest, reply: FastifyReply) => {
-    const req = request.raw;
+    const raw = request.raw;
     const res = reply.raw;
+
+    // Fastify has already consumed the body stream for application/json etc.; attach parsed body
+    // so Express sees req.body. Use a Proxy so express.json() cannot overwrite with empty when
+    // it reads the already-consumed stream.
+    const bodyFromFastify = await Promise.resolve((request as { body?: unknown }).body);
+    const req: IncomingMessageWithBody = new Proxy(raw, {
+      get(target, prop: string | symbol) {
+        if (prop === 'body') return bodyFromFastify;
+        return Reflect.get(target, prop);
+      },
+      set(target, prop: string | symbol, value: unknown) {
+        if (prop === 'body') return true; // keep Fastify's body; ignore express.json() overwrite
+        return Reflect.set(target, prop, value);
+      },
+      has(target, prop) {
+        if (prop === 'body') return bodyFromFastify !== undefined;
+        return Reflect.has(target, prop);
+      },
+    }) as IncomingMessageWithBody;
 
     await new Promise<void>((resolve, reject) => {
       let settled = false;
@@ -30,8 +66,6 @@ export function mountExpress(fastify: FastifyInstance, expressApp: Application):
         resolve();
       };
 
-      // Express calls next() only when the chain finishes without sending; if a handler
-      // sends (res.send()), next is never called. So we also resolve when res finishes.
       res.once('finish', finish);
       res.once('close', finish);
 
@@ -49,7 +83,7 @@ export function mountExpress(fastify: FastifyInstance, expressApp: Application):
         resolve();
       };
 
-      (expressApp as (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, next: (err?: Error) => void) => void)(req, res, done);
+      (expressApp as unknown as ExpressRequestListener)(req, res, done);
     });
   });
 }

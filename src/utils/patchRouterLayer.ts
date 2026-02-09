@@ -10,11 +10,10 @@
  */
 
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const requireFromPkg = createRequire(import.meta.url);
-const thisDir = path.dirname(fileURLToPath(import.meta.url));
+const requireFromPkg = createRequire(__filename);
+const thisDir = __dirname;
 
 type LayerCtor = (
   path: string | RegExp | Array<string | RegExp>,

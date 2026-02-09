@@ -127,6 +127,19 @@ So:
 
 ---
 
+## RegExp and non-string routes (how Express handles them)
+
+**Express** natively supports RegExp (and other non-string) paths: `app.get(/^\/user\/[0-9]+$/, fn)` and `app.use(/^\/api/, fn)` are valid. The Express router (the `router` package) stores and matches these; see e.g. Express 5 tests in `test/app.use.js` (“should support regexp path”) and `test/app.router.js` (“when given a regexp”). **Rendering is not tied to RegExp** — Express’s own EJS example (`express-5.2.1/examples/ejs/index.js`) uses a normal string path: `app.get('/', ...)` and `res.render('users', ...)`.
+
+**We** do not flatten routes whose `route.path` is not a string (e.g. RegExp) onto the Fastify lane: in `flattenRouter` we skip those layers so they are never registered as Fastify routes. So:
+
+- RegExp routes **always** run on the **Express lane**. The real Express app (and its router) run and match the path with the RegExp.
+- We don’t try to convert RegExp to a Fastify path; Fastify’s route API is path-based, so we leave RegExp handling to Express.
+
+In our **view-engine** and **fast-view** examples we use a RegExp path for the page that calls `res.render()` **only** so that route stays on the Express lane — our response adapter does not implement `res.render` on the Fastify lane. So we use `app.get(/^\/page\/?/, ...)` there as a deliberate choice: that way the request is not compiled to Fastify and goes to the Express lane where `res.render` exists. It is not because Express “uses RegExp for rendering”; it’s so that this app works with `fast()` without implementing `res.render` in the adapter.
+
+---
+
 ## Summary
 
 | Concept | What it is |

@@ -98,11 +98,17 @@ export function fast(
 
   mountExpress(fastify, app);
 
-  const expressErrorMiddleware = getExpressErrorMiddleware(app as unknown as ExpressAppLike);
+  const expressErrorMiddleware = getExpressErrorMiddleware(
+    app as unknown as ExpressAppLike,
+  );
   if (expressErrorMiddleware) {
     const adaptRequest = createRequestAdapter();
     fastify.setErrorHandler(
-      wrapErrorHandler(expressErrorMiddleware, adaptRequest, adaptResponseOneShot)
+      wrapErrorHandler(
+        expressErrorMiddleware,
+        adaptRequest,
+        adaptResponseOneShot,
+      ),
     );
   }
 
@@ -127,7 +133,15 @@ export function fast(
       ) as Server;
     }
     const fastifyCb: ListenCallback = (err, address) => {
-      if (userCb) userCb(err, address);
+      if (err) {
+        server.emit("error", err);
+        if (userCb && userCb.length > 0) userCb(err, address);
+        if ((err as NodeJS.ErrnoException).code === "EADDRINUSE") {
+          throw err;
+        }
+        return;
+      }
+      if (userCb) userCb(null, address);
     };
     let userCb: ListenCallback | undefined;
     if (typeof port === "object" && port !== null && "port" in port) {
@@ -137,10 +151,10 @@ export function fast(
           ? (hostOrBacklogOrCb as ListenCallback)
           : undefined;
       listenReentry = true;
+      const host = opts.host ?? "0.0.0.0";
       try {
-        if (userCb)
-          fastify.listen({ port: opts.port ?? 0, host: opts.host }, fastifyCb);
-        else fastify.listen({ port: opts.port ?? 0, host: opts.host });
+        if (userCb) fastify.listen({ port: opts.port ?? 0, host }, fastifyCb);
+        else fastify.listen({ port: opts.port ?? 0, host });
       } catch (e) {
         listenReentry = false;
         throw e;
@@ -154,10 +168,10 @@ export function fast(
     );
     userCb = options.cb;
     listenReentry = true;
+    const host = options.host ?? "0.0.0.0";
     try {
-      if (userCb)
-        fastify.listen({ port: options.port, host: options.host }, fastifyCb);
-      else fastify.listen({ port: options.port, host: options.host });
+      if (userCb) fastify.listen({ port: options.port, host }, fastifyCb);
+      else fastify.listen({ port: options.port, host });
     } catch (e) {
       listenReentry = false;
       throw e;

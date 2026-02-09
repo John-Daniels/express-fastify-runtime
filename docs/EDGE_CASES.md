@@ -15,7 +15,7 @@ This doc lists edge cases that can break “drop-in Express” behavior. Correct
 ### 2. Multiple `res.send()` / `res.json()` / `res.end()`
 
 - First send wins; subsequent must not crash the process.
-- **Status:** Depends on adapter and Fastify reply; double-send should be guarded or documented.
+- **Status:** On the **Express lane** (raw Node res), a second send throws "Cannot set headers after they are sent to the client". On the Fastify lane the adapter uses Fastify’s reply (single send). **Mitigation:** In global/4-arg error handlers, always guard with `if (!res.headersSent)` before calling `res.status(...).json(...)` so you don’t send again after the route already responded (e.g. error thrown in async code after a successful send).
 
 ### 3. `res.headersSent`
 

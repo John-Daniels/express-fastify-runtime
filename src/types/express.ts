@@ -79,6 +79,12 @@ export type ExpressResponse = ServerResponse & {
   vary(field: string): ExpressResponse;
   end(cb?: () => void): ServerResponse;
   end(chunk: unknown, encoding?: BufferEncoding, cb?: () => void): ServerResponse;
+  /** View engine render (Express lane only; on Fastify lane we send 501 + dev warning). */
+  render?(
+    view: string,
+    locals?: Record<string, unknown>,
+    callback?: (err: Error | null, html?: string) => void
+  ): ExpressResponse;
   /** Per-request response locals (Express-compatible). */
   locals: Record<string, unknown>;
   headersSent: boolean;

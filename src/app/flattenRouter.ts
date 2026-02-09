@@ -9,6 +9,7 @@
 
 import type { RouteEntry } from '../types/internal.js';
 import type { ExpressHandler } from '../types/express.js';
+import { isExpressLaneHandler } from '../runtime/expressLane.js';
 import { joinPath } from '../utils/path.js';
 
 /** Minimal Express Router shape (express + router package). */
@@ -71,8 +72,14 @@ export function flattenRouter(router: ExpressRouterLike, mountPath: string): Rou
   for (const layer of stack) {
     if (layer.route) {
       const route = layer.route;
-      const routePath = typeof route.path === 'string' ? route.path : '/';
-      const fullPath = joinPath(mountPath, routePath);
+      // Skip RegExp/array routes so they stay on Express lane (res.render, etc.)
+      if (typeof route.path !== 'string') continue;
+      // Skip routes whose handler(s) are marked with expressLane() or @ExpressLane()
+      const hasExpressLaneHandler = route.stack.some(
+        (l) => isExpressLaneHandler(l.handle)
+      );
+      if (hasExpressLaneHandler) continue;
+      const fullPath = joinPath(mountPath, route.path);
 
       for (const method of Object.keys(route.methods)) {
         const m = method === '_all' ? 'all' : method.toLowerCase();
@@ -95,8 +102,10 @@ export function flattenRouter(router: ExpressRouterLike, mountPath: string): Rou
     const middlewarePath = getMiddlewareLayerPath(layer);
     if (middlewarePath === null) return null;
 
-    const fullPath = joinPath(mountPath, middlewarePath);
     const handle = layer.handle;
+    if (isExpressLaneHandler(handle)) continue;
+
+    const fullPath = joinPath(mountPath, middlewarePath);
 
     if (isExpressRouter(handle)) {
       const nested = flattenRouter(handle, fullPath);

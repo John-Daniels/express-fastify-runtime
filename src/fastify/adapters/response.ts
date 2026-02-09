@@ -54,6 +54,11 @@ export function adaptResponse(fastifyReply: FastifyReply, _fastifyReq: FastifyRe
       fastifyReply.type('application/json').send(body);
       return res;
     }
+    // Express: string defaults to html when Content-Type not set (response.js send())
+    if (typeof body === 'string' && !raw.getHeader('Content-Type')) {
+      fastifyReply.type('text/html').send(body);
+      return res;
+    }
     fastifyReply.send(body);
     return res;
   };
@@ -216,6 +221,26 @@ export function adaptResponse(fastifyReply: FastifyReply, _fastifyReq: FastifyRe
     return res;
   };
 
+  const RES_RENDER_HINT =
+    'res.render is not implemented on the Fastify lane. Wrap this handler with expressLane() so the route runs on the Express lane. See docs/FAST_PRODUCTION_CHECKLIST.md';
+  res.render = function (
+    _view: string,
+    _locals?: Record<string, unknown>,
+    _callback?: (err: Error | null, html?: string) => void
+  ) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[express-fastify-runtime] ${RES_RENDER_HINT}`);
+    }
+    if (!raw.headersSent) {
+      fastifyReply.status(501).type('application/json').send({
+        error: 'res.render is not implemented on the Fastify lane',
+        hint: 'Wrap this handler with expressLane() so the route runs on the Express lane.',
+        docs: 'docs/FAST_PRODUCTION_CHECKLIST.md',
+      });
+    }
+    return res;
+  };
+
   return res as ExpressResponse;
 }
 
@@ -248,12 +273,18 @@ export function createResponseAdapter(): (
     },
     send(body?: unknown) {
       const r = this._reply!;
+      const raw = r.raw;
       if (body === undefined) {
-        r.raw.end();
+        raw.end();
         return this as unknown as ExpressResponse;
       }
       if (typeof body === 'object' && body !== null && !Buffer.isBuffer(body)) {
         r.type('application/json').send(body);
+        return this as unknown as ExpressResponse;
+      }
+      // Express: string defaults to html when Content-Type not set (response.js send())
+      if (typeof body === 'string' && !raw.getHeader('Content-Type')) {
+        r.type('text/html').send(body);
         return this as unknown as ExpressResponse;
       }
       r.send(body);
@@ -409,6 +440,26 @@ export function createResponseAdapter(): (
         }
       } else {
         raw.end();
+      }
+      return this as unknown as ExpressResponse;
+    },
+    render(
+      _view: string,
+      _locals?: Record<string, unknown>,
+      _callback?: (err: Error | null, html?: string) => void
+    ) {
+      const RES_RENDER_HINT =
+        'res.render is not implemented on the Fastify lane. Wrap this handler with expressLane() so the route runs on the Express lane. See docs/FAST_PRODUCTION_CHECKLIST.md';
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn(`[express-fastify-runtime] ${RES_RENDER_HINT}`);
+      }
+      const r = this._reply!;
+      if (!r.raw.headersSent) {
+        r.status(501).type('application/json').send({
+          error: 'res.render is not implemented on the Fastify lane',
+          hint: 'Wrap this handler with expressLane() so the route runs on the Express lane.',
+          docs: 'docs/FAST_PRODUCTION_CHECKLIST.md',
+        });
       }
       return this as unknown as ExpressResponse;
     },

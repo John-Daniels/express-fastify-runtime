@@ -164,6 +164,34 @@ describe("fast(expressApp)", () => {
     await fastify.close();
   });
 
+  it("res.setHeader + res.status(200).send() (e.g. CSV export) works", async () => {
+    const app = express();
+    app.get("/export-csv", (req, res) => {
+      const csv = "name,value\nfoo,1\nbar,2";
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader(
+        "Content-Disposition",
+        'attachment; filename="export.csv"',
+      );
+      res.status(200).send(csv);
+    });
+    const fastify = fast(app);
+    await fastify.listen({ port: 0, host: "127.0.0.1" });
+    const addr = fastify.server?.address();
+    assert.ok(addr && typeof addr === "object" && addr.port);
+    const res = await fetch(`http://127.0.0.1:${addr.port}/export-csv`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(
+      res.headers.get("content-type"),
+      "text/csv",
+    );
+    assert.ok(
+      res.headers.get("content-disposition")?.includes("attachment"),
+    );
+    assert.strictEqual(await res.text(), "name,value\nfoo,1\nbar,2");
+    await fastify.close();
+  });
+
   it("Express 4-arg error middleware receives errors when request falls back to Express lane", async () => {
     // App with only middleware (no flattened routes) so /fail is handled by notFoundHandler → Express
     const app = express();

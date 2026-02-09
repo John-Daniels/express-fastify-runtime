@@ -5,9 +5,14 @@
 import type { FastifyError, FastifyRequest, FastifyReply } from 'fastify';
 import type { ExpressRequest, ExpressResponse, ExpressErrorMiddleware } from '../types/express.js';
 
-/** Build a minimal Express-like res for the error handler so status/json/setHeader always work. */
+/** Build Express-like res for the error handler (status, send, json, set, setHeader, locals, headersSent). */
 function errorHandlerRes(reply: FastifyReply): ExpressResponse {
+  const locals: Record<string, unknown> = {};
   const res = {
+    locals,
+    get headersSent() {
+      return reply.raw.headersSent;
+    },
     status(code: number) {
       reply.raw.statusCode = code;
       return res;

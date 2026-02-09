@@ -83,6 +83,26 @@ Same env: `MW`, `PORT`, `DURATION`.
 
 ---
 
+## fast() scenarios (where fast() wins or fails)
+
+Benchmark **fast(expressApp)** across multiple scenarios to see where it beats plain Express and where it degrades or hits the Express lane.
+
+```bash
+npm run build
+npm run benchmark:fast
+```
+
+Options:
+
+- `--express` — run only Express (no fast())
+- `--fast` — run only fast()
+- `--scenario=NAME` — run one scenario (e.g. `--scenario=baseline`, `--scenario=express-lane`)
+- `DURATION=5` — seconds per scenario (default 3)
+
+Scenarios: baseline (5 mw, GET /), many-routes (30 routes), deep-middleware (25 mw), json-body (POST 1KB), headers/cookies, redirect, send-string, express-lane (RegExp route so every request hits Express). The report prints req/s for Express vs fast() and a ratio; ratio > 1 means fast() is faster.
+
+---
+
 ## Why Fastify sometimes wins (and when we match)
 
 - **Payloads (1KB / 1MB JSON):** We use Fastify’s native JSON parser and map it to `req.body`; we skip `express.json()` on the Fastify path. So we are within ~±20% of plain Fastify for large JSON.

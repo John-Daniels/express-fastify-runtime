@@ -1,6 +1,6 @@
 # Express features: supported vs not yet
 
-This list is derived from the **Express 5.x** codebase (`lib/application.js`, `lib/request.js`, `lib/response.js`, `lib/express.js`). We mark what express-fastify-runtime supports today and what is not yet implemented.
+This list is derived from the **Express 5.2.1** codebase (`express-5.2.1/lib/`). We mark what express-fastify-runtime supports today and what is not yet implemented. See [EXPRESS_REFERENCE.md](./EXPRESS_REFERENCE.md) for how we use Express as reference and which pitfalls we avoid.
 
 ---
 
@@ -37,34 +37,34 @@ This list is derived from the **Express 5.x** codebase (`lib/application.js`, `l
 
 | Feature | Express | express-fastify-runtime |
 |--------|---------|--------------------------|
-| **req.get(name)** / **req.header(name)** | ✅ | ✅ Supported |
+| **req.get(name)** / **req.header(name)** | ✅ | ✅ Supported (Referer/Referrer interchangeable) |
 | **req.query** | ✅ | ✅ Supported |
 | **req.params** | ✅ | ✅ Supported |
 | **req.body** | ✅ | ✅ Supported (when body parsed) |
 | **req.method** | ✅ | ✅ Supported |
-| **req.url** | ✅ | ✅ Supported |
+| **req.url** | ✅ | ✅ Supported (writable for router) |
 | **req.headers** | ✅ | ✅ Supported |
+| **req.originalUrl** | ✅ | ✅ Supported (writable for router) |
+| **req.baseUrl** | ✅ | ✅ Supported (writable for router) |
+| **req.path** | ✅ | ✅ Supported (derived from url) |
+| **req.protocol** | ✅ | ✅ Supported (x-forwarded-proto or socket) |
+| **req.secure** | ✅ | ✅ Supported |
+| **req.ip** | ✅ | ✅ Supported (x-forwarded-for or remoteAddress) |
+| **req.ips** | ✅ | ✅ Supported (x-forwarded-for array) |
+| **req.hostname** | ✅ | ✅ Supported (from Host header) |
+| **req.host** | ✅ | ✅ Supported |
+| **req.xhr** | ✅ | ✅ Supported (X-Requested-With header) |
+| **req.fresh** | ✅ | ✅ Supported (stub: false) |
+| **req.stale** | ✅ | ✅ Supported (stub: true) |
+| **req.cookies** | ✅ | ✅ Supported (parsed from Cookie header) |
+| **req.signedCookies** | ✅ | ✅ Supported (stub: {}; use cookie-parser for signed) |
 | **req.accepts(...)** | ✅ | ❌ Not yet |
 | **req.acceptsCharsets(...)** | ✅ | ❌ Not yet |
 | **req.acceptsEncodings(...)** | ✅ | ❌ Not yet |
 | **req.acceptsLanguages(...)** | ✅ | ❌ Not yet |
 | **req.range(size, options?)** | ✅ | ❌ Not yet |
 | **req.is(types)** | ✅ | ❌ Not yet |
-| **req.protocol** | ✅ | ❌ Not yet |
-| **req.secure** | ✅ | ❌ Not yet |
-| **req.ip** | ✅ | ❌ Not yet |
-| **req.ips** | ✅ | ❌ Not yet |
 | **req.subdomains** | ✅ | ❌ Not yet |
-| **req.path** | ✅ | ❌ Not yet |
-| **req.hostname** | ✅ | ❌ Not yet |
-| **req.host** | ✅ | ❌ Not yet |
-| **req.fresh** | ✅ | ❌ Not yet |
-| **req.stale** | ✅ | ❌ Not yet |
-| **req.xhr** | ✅ | ❌ Not yet |
-| **req.cookies** | ✅ | ❌ Not yet |
-| **req.signedCookies** | ✅ | ❌ Not yet |
-| **req.originalUrl** | ✅ | ✅ Supported (fast() request adapter; writable for router) |
-| **req.baseUrl** | ✅ | ✅ Supported (fast() request adapter; writable for router) |
 | **req.app** | ✅ | ❌ Not yet |
 | **req.res** | ✅ | ❌ Not yet |
 | **req.next** | ✅ | ❌ Not yet |
@@ -80,24 +80,26 @@ This list is derived from the **Express 5.x** codebase (`lib/application.js`, `l
 | **res.send(body?)** | ✅ | ✅ Supported |
 | **res.json(body?)** | ✅ | ✅ Supported |
 | **res.set(field, value?)** / **res.header(field, value?)** | ✅ | ✅ Supported |
-| **res.sendStatus(code)** | ✅ | ❌ Not yet |
-| **res.links(links)** | ✅ | ❌ Not yet |
-| **res.jsonp(body?)** | ✅ | ❌ Not yet |
+| **res.setHeader(name, value)** | ✅ | ✅ Supported |
+| **res.sendStatus(code)** | ✅ | ✅ Supported |
+| **res.type(type)** / **res.contentType(type)** | ✅ | ✅ Supported |
+| **res.links(links)** | ✅ | ✅ Supported |
+| **res.jsonp(body?)** | ✅ | ✅ Supported |
+| **res.attachment(filename?)** | ✅ | ✅ Supported |
+| **res.append(field, val)** | ✅ | ✅ Supported |
+| **res.get(field)** | ✅ | ✅ Supported |
+| **res.cookie(name, val, options?)** | ✅ | ✅ Supported |
+| **res.clearCookie(name, options?)** | ✅ | ✅ Supported |
+| **res.location(url)** | ✅ | ✅ Supported (url `"back"` → Referrer or `/`; encodeurl) |
+| **res.redirect(url)** / **res.redirect(status, url)** | ✅ | ✅ Supported |
+| **res.vary(field)** | ✅ | ✅ Supported |
+| **res.locals** | ✅ | ✅ Supported (per-request object) |
+| **res.headersSent** | ✅ | ✅ Supported |
+| **res.end(cb?)** / **res.end(chunk, encoding?, cb?)** | ✅ | ✅ Supported |
 | **res.sendFile(path, options?, callback?)** | ✅ | ❌ Not yet |
 | **res.download(path, filename?, options?, callback?)** | ✅ | ❌ Not yet |
-| **res.type(type)** / **res.contentType(type)** | ✅ | ❌ Not yet |
 | **res.format(obj)** | ✅ | ❌ Not yet |
-| **res.attachment(filename?)** | ✅ | ❌ Not yet |
-| **res.append(field, val)** | ✅ | ❌ Not yet |
-| **res.get(field)** | ✅ | ❌ Not yet |
-| **res.clearCookie(name, options?)** | ✅ | ❌ Not yet |
-| **res.cookie(name, val, options?)** | ✅ | ❌ Not yet |
-| **res.location(url)** | ✅ | ❌ Not yet |
-| **res.redirect(url)** / **res.redirect(status, url)** | ✅ | ❌ Not yet |
-| **res.vary(field)** | ✅ | ❌ Not yet |
 | **res.render(view, options?, callback?)** | ✅ | ❌ Not yet |
-| **res.locals** | ✅ | ❌ Not yet (v1: fail loudly if used) |
-| **res.headersSent** | ✅ | ❌ Not yet |
 | **res.app** | ✅ | ❌ Not yet |
 | **res.req** | ✅ | ❌ Not yet |
 | **res.charset** | ✅ | ❌ Not yet |
@@ -146,5 +148,5 @@ When a feature is not fully supported but can run on the **Express lane**, we fa
 
 ## Summary
 
-- **Supported:** `app.use`, `app.METHOD`, `app.all`, `app.listen` (with overloads), `express.Router()` (flattened when possible; else Express lane + dev warn), `req.get`/`header`, `req.query`/`params`/`body`/`method`/`url`/`headers`, `res.status`/`send`/`json`/`set`, `next()`, async handlers, `express.json()` (mapped to Fastify), route locking after `listen()`, `ServerLike` with `close()` and `address()`.
-- **Not yet:** Route (internal), `res.locals`, app settings (set/get/enable/disable), views (engine/render), param middleware, cookies, redirect, sendFile, static, and most req/res helpers (accepts, protocol, ip, etc.). Unsupported features either fail loudly (e.g. res.locals) or fall back to Express lane with a dev warning where applicable.
+- **Supported:** `app.use`, `app.METHOD`, `app.all`, `app.listen` (with overloads), `express.Router()` (flattened when possible; else Express lane + dev warn), `req.get`/`header` (Referer/Referrer interchangeable), `req.query`/`params`/`body`/`method`/`url`/`headers`/`path`/`protocol`/`secure`/`ip`/`ips`/`hostname`/`host`/`xhr`/`fresh`/`stale`/`cookies`/`signedCookies`/`originalUrl`/`baseUrl`, `req.accepts`/`req.acceptsCharsets`/`req.acceptsEncodings`/`req.acceptsLanguages`/`req.range`/`req.is`, `res.status`/`send`/`json`/`set`/`setHeader`/`header`/`sendStatus`/`type`/`contentType`/`links`/`jsonp`/`attachment`/`append`/`get`/`cookie`/`clearCookie`/`location` (including `"back"`)/`redirect`/`vary`/`locals`/`headersSent`/`end`, `next()`, async handlers, `express.json()` (mapped to Fastify), route locking after `listen()`, `ServerLike` with `close()` and `address()`.
+- **Not yet:** Route (internal), app settings (set/get/enable/disable), views (engine/render), param middleware, `res.sendFile`/`res.download`/`res.format`/`res.render`, `req.subdomains`/`req.app`/`req.res`/`req.next`/`req.route`, static (express.static). Unsupported features fall back to Express lane with a dev warning where applicable.

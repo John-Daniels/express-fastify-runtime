@@ -54,8 +54,9 @@
   ],
   "supported": [
     "app.use, app.METHOD, app.all, app.listen (overloads)",
-    "req.get, header, query, params, body, method, url, headers",
-    "res.status, send, json, set",
+    "req.get, header (Referer/Referrer), query, params, body, method, url, headers, path, protocol, secure, ip, ips, hostname, host, xhr, fresh, stale, cookies, signedCookies",
+    "req.accepts, acceptsCharsets, acceptsEncodings, acceptsLanguages, req.range, req.is",
+    "res.status, send, json, set, setHeader, header, sendStatus, type, contentType, links, jsonp, attachment, append, get, cookie, clearCookie, location (incl. back), redirect, vary, locals, headersSent, end",
     "next(), async handlers",
     "express.json() → Fastify",
     "route locking",
@@ -63,10 +64,10 @@
   ],
   "routerSupport": "app.use(path?, router) flattens the router (routes and router.use(path, fn)) when Layer is patched (load express-fastify-runtime before creating routers). Nested routers flattened recursively. RegExp paths → Express lane.",
   "notSupportedFailLoudly": [
-    "res.locals",
     "runtime mutation of middleware stack"
   ],
-  "notYet": "app.set, app.render, req.accepts, res.redirect, etc. — see docs/EXPRESS_FEATURES.md",
+  "notYet": "app.set, app.render, res.sendFile, res.format, req.subdomains, etc. — see docs/EXPRESS_FEATURES.md",
+  "expressReference": "Express 5.2.1 (express-5.2.1/) is the API reference; see docs/EXPRESS_REFERENCE.md for alignment and mistakes we avoid.",
   "commands": {
     "build": "npm run build",
     "test": "npm test",
@@ -80,6 +81,7 @@
   },
   "howToContinue": [
     "Read ai/CONTEXT.md and docs/SPEC.md.",
+    "Use Express 5.2.1 (express-5.2.1/) as API reference; see docs/EXPRESS_REFERENCE.md.",
     "Run npm run build, npm test, npm run benchmark.",
     "Pick item from acceptance criteria or not-yet features.",
     "Change only listed modules; keep structure.",

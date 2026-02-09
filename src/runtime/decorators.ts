@@ -10,5 +10,5 @@ export function decorateRequest(req: ExpressRequest): void {
 }
 
 export function decorateResponse(_res: ExpressResponse): void {
-  // res.locals not supported in v1
+  // res.locals supported via adapter (per-request object)
 }

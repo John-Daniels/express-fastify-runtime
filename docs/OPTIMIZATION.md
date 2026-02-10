@@ -127,7 +127,22 @@ That’s a **choice of the example**, not part of the runtime. Express apps ofte
 
 ---
 
-## 5. How to Run Benchmarks
+## 5. Why fast() isn't exactly as fast as plain Fastify
+
+At **compile time** we turn Express routes into Fastify routes. So the route itself is a normal Fastify route. But **per request** we still run:
+
+1. **Adapter** — build Express-like `req`/`res` and attach to the Fastify request (reusable objects, but the adapter function still runs).
+2. **Middleware chain** — run the N Express middleware in the preHandler via `runMiddlewareChain` (each middleware is a real function call; plain Fastify uses N empty hooks).
+3. **Handler via adapter** — `res.json({ ok: true })` goes through our `res.json` → `reply.type().send()`, so one extra layer vs Fastify's direct `return { ok: true }`.
+4. **Finish waiter** — we wait on `reply.raw.once('finish')` so we don't return until the response is flushed (Express semantics). One Promise + one listener per request.
+
+So the **workload** is the same (N no-ops + one JSON response), but the **path** is "Fastify + adapter + Express middleware runner". That's why fast() is typically a few percent slower than plain Fastify in the **fast-vs-fastify** benchmark. We optimize to keep that gap small (see principles above); we don't remove the adapter entirely because we need full Express API compatibility.
+
+To compare directly: `npm run benchmark:fast-vs-fastify` (see `benchmarks/fast-vs-fastify/README.md`). For a **plan to close the gap** (fast path, lazy res, setMaxListeners, etc.), see **`docs/PLAN_FASTIFY_CLOSER.md`**.
+
+---
+
+## 6. How to Run Benchmarks
 
 From the project root:
 
@@ -135,4 +150,4 @@ From the project root:
 npm run benchmark
 ```
 
-You’ll see req/s and latency for Express, Fastify, raw Node `http`, and express-fastify-runtime. The runtime is tuned so its numbers are in the same range as Fastify (and often ahead of plain Express).
+You’ll see req/s and latency for Express, Fastify, raw Node `http`, and express-fastify-runtime. The runtime is tuned so its numbers are in the same range as Fastify (and often ahead of plain Express). To compare fast() vs Fastify with the same workload: `npm run benchmark:fast-vs-fastify` (use `--minimal` or `MW=0` for pure route overhead).

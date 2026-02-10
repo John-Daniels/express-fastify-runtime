@@ -103,6 +103,19 @@ Scenarios: baseline (5 mw, GET /), many-routes (30 routes), deep-middleware (25 
 
 ---
 
+## fast() vs Fastify (same workload)
+
+Measures why fast() isn’t quite as fast as plain Fastify when the app shape is identical (N no-op middleware + GET / JSON). Same workload on both sides; the gap is our adapter + middleware runner + finish waiter.
+
+```bash
+npm run build
+npm run benchmark:fast-vs-fastify
+```
+
+Use `--minimal` or `MW=0` to measure pure route overhead (no middleware). See `benchmarks/fast-vs-fastify/README.md` and `docs/OPTIMIZATION.md` (§5) for why there is a gap and what we optimize.
+
+---
+
 ## Why Fastify sometimes wins (and when we match)
 
 - **Payloads (1KB / 1MB JSON):** We use Fastify’s native JSON parser and map it to `req.body`; we skip `express.json()` on the Fastify path. So we are within ~±20% of plain Fastify for large JSON.

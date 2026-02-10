@@ -39,6 +39,7 @@
     "benchmark:payloads": "node benchmarks/payloads/run.js",
     "benchmark:uploads": "node benchmarks/uploads/run.js",
     "benchmark:fast": "node benchmarks/fast-scenarios/run.js",
+    "benchmark:fast-vs-fastify": "node benchmarks/fast-vs-fastify/run.js",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {

@@ -110,6 +110,7 @@ function buildPreHandlersForPath(
     const res = adaptResponse(reply, request);
     request[kExpressReq] = req;
     request[kExpressRes] = res;
+    (res as ExpressResponse & { req?: ExpressRequest }).req = req;
     await runMiddlewareChain(applicable, req, res, reply);
   };
 }
@@ -147,6 +148,9 @@ async function runRouteHandlers(
     if (!nextCalled) break;
   }
   if (reply.sent) return;
+  if (typeof reply.raw.setMaxListeners === "function") {
+    reply.raw.setMaxListeners(Math.max(reply.raw.getMaxListeners?.() ?? 10, 15));
+  }
   await new Promise<void>((r) => reply.raw.once("finish", r));
 }
 

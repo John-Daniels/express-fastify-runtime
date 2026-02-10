@@ -99,7 +99,7 @@ Options:
 - `--scenario=NAME` — run one scenario (e.g. `--scenario=baseline`, `--scenario=express-lane`)
 - `DURATION=5` — seconds per scenario (default 3)
 
-Scenarios: baseline (5 mw, GET /), many-routes (30 routes), deep-middleware (25 mw), json-body (POST 1KB), headers/cookies, redirect, send-string, express-lane (RegExp route so every request hits Express). The report prints req/s for Express vs fast() and a ratio; ratio > 1 means fast() is faster.
+Scenarios: baseline (5 mw, GET /), many-routes (30 routes), deep-middleware (25 mw), json-body (POST 1KB), headers/cookies, redirect, send-string, **express-lane** (RegExp route so every request hits the Express lane / proxy). The report prints req/s for Express vs fast() and a ratio; ratio > 1 means fast() is faster. **We keep the Express lane at least as fast as raw Express** (ratio ≥ 1) so there is no downside when a request falls through to the proxy.
 
 ---
 

@@ -107,6 +107,7 @@ These will throw, return wrong behavior, or 500 if you use them in routes/middle
 | **Streaming (res.write / pipe(res))** | Fastify lane uses reply.send(); streaming is not mapped 1:1 | Use Express lane for streaming responses, or implement with Fastify streams. |
 | **404** | Unhandled requests go to Express via setNotFoundHandler (same app, adapted req/res). Catch-all `app.use((req, res) => …)` is only run when no route matched (we run middleware in stack order before the matching route). | 404 behavior is correct; ensure your app’s 404 handler doesn’t rely on unsupported res/req APIs. |
 | **req.originalUrl / req.baseUrl / req.url** | Set and **writable** in the notFoundHandler adapter so Express router can mutate them. In Fastify lane they come from the request adapter used there. | Use as normal for routing; avoid mutating them in application code if you rely on them later. |
+| **Morgan / logging middleware** | On the Fastify lane, middleware runs in the preHandler. The adapted `res` delegates `.on()`, `.once()`, `.emit` to the underlying Node `ServerResponse` (reply.raw), so `res.on('finish', ...)` works and morgan logs when the response actually finishes. | Logs can appear slightly after the request “returns” or in a burst: the log runs on the `'finish'` event (when the response is fully flushed). If you send several requests quickly, multiple `'finish'` events may fire close together, so logs can appear in a batch. This is normal. |
 
 ---
 

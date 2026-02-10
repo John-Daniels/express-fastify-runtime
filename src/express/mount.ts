@@ -57,24 +57,19 @@ export function mountExpress(
     const raw = request.raw;
     const res = reply.raw;
 
-    // Fastify has already consumed the body stream for application/json etc.; attach parsed body
-    // so Express sees req.body. Use a Proxy so express.json() cannot overwrite with empty when
-    // it reads the already-consumed stream.
+    // Fastify has already consumed the body stream; attach parsed body so Express sees req.body.
+    // Define body as non-writable so express.json() cannot overwrite with empty when it reads
+    // the already-consumed stream. No Proxy — avoids per-property access overhead on Express lane.
     const bodyFromFastify = await Promise.resolve((request as { body?: unknown }).body);
-    const req: IncomingMessageWithBody = new Proxy(raw, {
-      get(target, prop: string | symbol) {
-        if (prop === 'body') return bodyFromFastify;
-        return Reflect.get(target, prop);
-      },
-      set(target, prop: string | symbol, value: unknown) {
-        if (prop === 'body') return true; // keep Fastify's body; ignore express.json() overwrite
-        return Reflect.set(target, prop, value);
-      },
-      has(target, prop) {
-        if (prop === 'body') return bodyFromFastify !== undefined;
-        return Reflect.has(target, prop);
-      },
-    }) as IncomingMessageWithBody;
+    const req = raw as IncomingMessageWithBody;
+    if (bodyFromFastify !== undefined) {
+      Object.defineProperty(raw, 'body', {
+        value: bodyFromFastify,
+        writable: false,
+        configurable: true,
+        enumerable: true,
+      });
+    }
 
     await new Promise<void>((resolve, reject) => {
       let settled = false;

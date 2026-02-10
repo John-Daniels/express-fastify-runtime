@@ -32,33 +32,44 @@ export function expressLane<T extends ExpressMiddleware | ExpressErrorMiddleware
   return wrapped as T;
 }
 
+function wrapForExpressLane(fn: (...args: unknown[]) => unknown): (...args: unknown[]) => unknown {
+  const wrapped = function (this: unknown, ...args: unknown[]) {
+    return fn.apply(this, args);
+  };
+  Object.defineProperty(wrapped, EXPRESS_LANE, { value: true, enumerable: false });
+  return wrapped;
+}
+
 /**
  * Class method decorator: mark the handler to run on the Express lane only.
+ * Use as @ExpressLane or @ExpressLane() (both work).
  * Requires "experimentalDecorators": true (and optionally "emitDecoratorMetadata") in tsconfig.
+ *
+ * Note: Decorators are only valid on class members. For standalone functions, use
+ * expressLane(fn) when registering the route: router.get('/path', expressLane(myHandler)).
  *
  * @example
  *   class PageController {
- *     @ExpressLane()
+ *     @ExpressLane
  *     page(req: Request, res: Response) {
  *       res.render('index', { title: 'Hello' });
  *     }
  *   }
  *   app.get('/page', (req, res, next) => new PageController().page(req, res, next));
- *   // or: app.get('/page', controller.page.bind(controller));
  */
-export function ExpressLane() {
-  return function (
-    _target: unknown,
-    _propertyKey: string,
-    descriptor: PropertyDescriptor
-  ): PropertyDescriptor {
-    const fn = descriptor.value;
-    if (typeof fn !== 'function') return descriptor;
-    const wrapped = function (this: unknown, ...args: unknown[]) {
-      return fn.apply(this, args);
-    };
-    Object.defineProperty(wrapped, EXPRESS_LANE, { value: true, enumerable: false });
-    descriptor.value = wrapped;
+export function ExpressLane(
+  targetOrNil?: unknown,
+  propertyKeyOrNil?: string,
+  descriptorOrNil?: PropertyDescriptor
+): PropertyDescriptor | ((_t: unknown, _k: string, d: PropertyDescriptor) => PropertyDescriptor) {
+  if (descriptorOrNil !== undefined && typeof descriptorOrNil.value === 'function') {
+    descriptorOrNil.value = wrapForExpressLane(descriptorOrNil.value as (...args: unknown[]) => unknown);
+    return descriptorOrNil;
+  }
+  return function (_target: unknown, _propertyKey: string, descriptor: PropertyDescriptor): PropertyDescriptor {
+    if (typeof descriptor.value === 'function') {
+      descriptor.value = wrapForExpressLane(descriptor.value as (...args: unknown[]) => unknown);
+    }
     return descriptor;
   };
 }

@@ -16,6 +16,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { Application } from 'express';
+import { applyMaxListeners } from '../utils/maxListeners.js';
 
 /** Express app signature: (req, res, next) => void */
 type ExpressRequestListener = (
@@ -53,6 +54,8 @@ export function mountExpress(
       const url = request.url ?? "/";
       console.log(`[express-fastify-runtime] Express lane: ${method} ${url}`);
     }
+
+    applyMaxListeners(request.raw, reply.raw);
 
     const raw = request.raw;
     const res = reply.raw;

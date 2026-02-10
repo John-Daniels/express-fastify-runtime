@@ -48,9 +48,66 @@ function responseProxy<T extends ExpressResponse>(
 /** One-shot adapter: creates a new res per call (e.g. for adaptResponse(reply, req)). */
 export function adaptResponse(fastifyReply: FastifyReply, _fastifyReq: FastifyRequest): ExpressResponse {
   const raw = fastifyReply.raw;
-  const res = Object.create(raw) as ExpressResponse & { _locals: Record<string, unknown> };
+  const res = Object.create(raw) as ExpressResponse & {
+    _locals: Record<string, unknown>;
+    __efrFinishListeners?: Array<{ fn: (...args: unknown[]) => void; once: boolean }>;
+    __efrFinishEmitted?: boolean;
+    __efrEmitFinish?: () => void;
+  };
   let statusCode = 200;
   res._locals = {};
+
+  // Custom 'finish'/'end' so morgan (on-finished) runs when we've sent, not when OS flushes (keep-alive fix).
+  const finishListeners: Array<{ fn: (...args: unknown[]) => void; once: boolean }> = [];
+  let finishEmitted = false;
+  res.__efrFinishListeners = finishListeners;
+  res.__efrEmitFinish = () => {
+    if (finishEmitted) return;
+    finishEmitted = true;
+    res.__efrFinishEmitted = true;
+    const toRun = [...finishListeners];
+    finishListeners.length = 0;
+    toRun.forEach(({ fn }) => {
+      try {
+        fn();
+      } catch (_) {
+        /* ignore */
+      }
+    });
+  };
+
+  Object.assign(res, {
+    on(event: string, listener: (...args: unknown[]) => void) {
+      if (event === "finish" || event === "end") {
+        finishListeners.push({ fn: listener as (...args: unknown[]) => void, once: false });
+        return res;
+      }
+      return raw.on.apply(raw, arguments as unknown as Parameters<typeof raw.on>);
+    },
+    once(event: string, listener: (...args: unknown[]) => void) {
+      if (event === "finish" || event === "end") {
+        finishListeners.push({ fn: listener as (...args: unknown[]) => void, once: true });
+        return res;
+      }
+      return raw.once.apply(raw, arguments as unknown as Parameters<typeof raw.once>);
+    },
+    emit(event: string, ...args: unknown[]) {
+      if (event === "finish" || event === "end") {
+        res.__efrEmitFinish?.();
+        return true;
+      }
+      return raw.emit.apply(raw, arguments as unknown as Parameters<typeof raw.emit>);
+    },
+  });
+
+  // Emit 'finish' after send so morgan/on-finished run per-request. Use double setImmediate so
+  // Fastify's sync send (writeHead + end) has run and res._startAt/status/headers are set (no " - - ms - -").
+  function afterSend(): void {
+    setImmediate(() => setImmediate(() => emitFinishNextTick(res)));
+  }
+  function emitFinishNextTick(r: ExpressResponse & { __efrEmitFinish?: () => void }): void {
+    if (r.__efrEmitFinish) r.__efrEmitFinish();
+  }
 
   res.locals = res._locals;
   Object.defineProperty(res, 'headersSent', {
@@ -71,34 +128,41 @@ export function adaptResponse(fastifyReply: FastifyReply, _fastifyReq: FastifyRe
     raw.statusCode = code;
     const body = STATUS_CODES[code] || String(code);
     fastifyReply.type('text/plain').send(body);
+    afterSend();
     return res;
   };
 
   res.send = function (body?: unknown) {
     if (body === undefined) {
       raw.end();
+      afterSend();
       return res;
     }
     if (typeof body === 'object' && body !== null && !Buffer.isBuffer(body)) {
       fastifyReply.type('application/json').send(body);
+      afterSend();
       return res;
     }
     // Express: string defaults to html when Content-Type not set (response.js send())
     if (typeof body === 'string' && !raw.getHeader('Content-Type')) {
       fastifyReply.type('text/html').send(body);
+      afterSend();
       return res;
     }
     fastifyReply.send(body);
+    afterSend();
     return res;
   };
 
   res.json = function (body?: unknown) {
     fastifyReply.type('application/json').send(body);
+    afterSend();
     return res;
   };
 
   res.jsonp = function (body?: unknown) {
     fastifyReply.type('application/json').send(body);
+    afterSend();
     return res;
   };
 

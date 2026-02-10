@@ -6,9 +6,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import crypto from "node:crypto";
+import http from "node:http";
 import { createApp, fast } from "../../dist/index.js";
 import { Router } from "express";
 import express from "express";
+import morgan from "morgan";
 
 describe("createApp", () => {
   it("returns app with use, get, post, listen", () => {
@@ -265,5 +267,68 @@ describe("fast(expressApp)", () => {
     assert.strictEqual(res.status, 200);
     assert.deepStrictEqual(await res.json(), { ok: true });
     await fastify.close();
+  });
+});
+
+describe("morgan with keep-alive (Fastify lane)", () => {
+  it("logs one line per request with keep-alive before connection closes", async () => {
+    const logs = [];
+    const stream = { write: (line) => logs.push(line.trim()) };
+    const app = express();
+    app.use(morgan("tiny", { stream }));
+    app.get("/ping", (req, res) => res.json({ pong: true }));
+
+    const fastify = fast(app);
+    await fastify.listen({ port: 0, host: "127.0.0.1" });
+    const addr = fastify.server?.address();
+    assert.ok(addr && typeof addr === "object" && addr.port);
+    const port = addr.port;
+
+    const agent = new http.Agent({ keepAlive: true });
+    const doRequest = () =>
+      new Promise((resolve, reject) => {
+        const req = http.request(
+          { host: "127.0.0.1", port, path: "/ping", agent },
+          (res) => {
+            res.on("data", () => {});
+            res.on("end", resolve);
+          },
+        );
+        req.on("error", reject);
+        req.end();
+      });
+
+    await doRequest();
+    await doRequest();
+    await doRequest();
+
+    // Drain event loop so double setImmediate(emit 'finish') runs for all 3 requests
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+
+    agent.destroy();
+    await fastify.close();
+
+    assert.strictEqual(
+      logs.length,
+      3,
+      `expected 3 morgan log lines (one per request) with keep-alive, got ${logs.length}: ${logs.join(" | ")}`,
+    );
+    logs.forEach((line, i) => {
+      assert.ok(
+        line.includes("GET") && line.includes("/ping") && line.includes("200"),
+        `log ${i + 1} should contain GET /ping 200: ${line}`,
+      );
+      // Catch " - - ms - -" (missing status/response-time/content-length)
+      assert.ok(
+        !line.includes(" - - ms - -"),
+        `log ${i + 1} should have status, response-time, content-length (no " - - ms - -"): ${line}`,
+      );
+      assert.ok(
+        /\d+\.?\d*\s*ms/.test(line),
+        `log ${i + 1} should include response time in ms: ${line}`,
+      );
+    });
   });
 });

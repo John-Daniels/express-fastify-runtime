@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ClassifiedRoute } from '../types/internal.js';
 import type { ExpressRequest, ExpressResponse, NextFunction } from '../types/express.js';
 import { createRequestAdapter } from './adapters/request.js';
-import { createResponseAdapter } from './adapters/response.js';
+import { adaptResponse } from './adapters/response.js';
 import { registerFastifyRoutes } from '../app/compile.js';
 
 export interface RegisterCompiledRoutesOptions {
@@ -21,6 +21,6 @@ export function registerCompiledRoutes(
   options?: RegisterCompiledRoutesOptions,
 ): void {
   const adaptRequest = createRequestAdapter();
-  const adaptResponse = createResponseAdapter();
+  // One-shot adaptResponse so each request gets its own res with morgan-friendly 'finish' emit (no reused res).
   registerFastifyRoutes(fastify, classified, adaptRequest, adaptResponse, runMiddleware, options);
 }

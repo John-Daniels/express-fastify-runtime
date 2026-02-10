@@ -15,6 +15,7 @@ import type {
 import type { RequestAdapter } from "../types/internal.js";
 import type { ResponseAdapter } from "../types/internal.js";
 import { normalizePath } from "../utils/path.js";
+import { applyMaxListeners } from "../utils/maxListeners.js";
 import { isExpressJson, expressJsonPassthrough } from "../express/middleware.js";
 
 export type RunMiddleware = (
@@ -106,6 +107,7 @@ function buildPreHandlersForPath(
     }
   }
   return async (request: RequestWithExpress, reply: FastifyReply) => {
+    applyMaxListeners(request.raw, reply.raw);
     const req = adaptRequest(request);
     const res = adaptResponse(reply, request);
     request[kExpressReq] = req;
@@ -147,11 +149,14 @@ async function runRouteHandlers(
     }
     if (!nextCalled) break;
   }
-  if (reply.sent) return;
-  if (typeof reply.raw.setMaxListeners === "function") {
-    reply.raw.setMaxListeners(Math.max(reply.raw.getMaxListeners?.() ?? 10, 15));
-  }
-  await new Promise<void>((r) => reply.raw.once("finish", r));
+  // Do NOT await reply.raw.once('finish') here. With keep-alive (e.g. Postman),
+  // Node emits 'finish' only when the response is flushed to the OS. If we keep
+  // the handler open waiting for 'finish', the request stays "in flight" and the
+  // socket may not flush until the client disconnects — so morgan and res.on('finish')
+  // would only run on disconnect. Express returns immediately after res.send(), so
+  // the connection can flush and 'finish' fires in a timely way. We match that:
+  // return as soon as route handlers have run; morgan/on-finished still run when
+  // the raw response actually finishes (or on socket 'close').
 }
 
 export interface RegisterFastifyRoutesOptions {
@@ -225,6 +230,25 @@ export function registerFastifyRoutes(
         handler: async (request, reply) => {
           const req = (request as RequestWithExpress)[kExpressReq]!;
           const res = (request as RequestWithExpress)[kExpressRes]!;
+          // Morgan's :response-time needs res._startAt. Morgan sets it via onHeaders(res, recordStartTime)
+          // which wraps res.writeHead; Fastify calls raw.writeHead, so we patch raw.writeHead to set
+          // res._startAt when headers are written (same as morgan's recordStartTime).
+          const raw = reply.raw as import("node:http").ServerResponse & {
+            _efrWriteHeadPatched?: boolean;
+          };
+          // Morgan :response-time needs res._startAt when headers are written (Express uses onHeaders).
+          if (!raw._efrWriteHeadPatched) {
+            raw._efrWriteHeadPatched = true;
+            const origWriteHead = raw.writeHead.bind(raw);
+            raw.writeHead = function (this: import("node:http").ServerResponse, ...args: unknown[]) {
+              const resAny = res as ExpressResponse & { _startAt?: [number, number]; _startTime?: Date };
+              if (resAny._startAt === undefined) {
+                resAny._startAt = process.hrtime();
+                resAny._startTime = new Date();
+              }
+              return (origWriteHead as (...a: unknown[]) => ReturnType<typeof origWriteHead>).apply(this, args);
+            };
+          }
           // Set baseUrl from route path so handlers see Express-like base (e.g. /v1 for /v1/admins/auth/login)
           const segments = path.split("/").filter(Boolean);
           req.baseUrl = segments.length >= 1 ? "/" + segments[0] : "";

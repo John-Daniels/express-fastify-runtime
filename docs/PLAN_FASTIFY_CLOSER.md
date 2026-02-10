@@ -14,7 +14,7 @@ Per request on the Fastify lane we:
 2. **Adapt response** — reusable res: set `_reply`, `_req`, `_locals`; return `responseProxy(res, raw)`.
 3. **Run middleware chain** (preHandler) — for each applicable middleware, call `fn(req, res, next)`. No-op middleware is just `next()` (one function call each).
 4. **Run route handlers** — same loop; final handler usually does `res.json(...)` → our `res.json` → `reply.type().send()`.
-5. **Finish waiter** — only when no one sent (`reply.sent` false); we add one `reply.raw.once('finish', resolve)` and await. When the handler sends we skip this.
+5. **No finish waiter** — we do not await `reply.raw.once('finish')`; we return as soon as route handlers have run so the response can flush (avoids keep-alive/Postman logging only on disconnect). Morgan/on-finished still run when the response actually finishes.
 
 So the remaining overhead is: **adapter mutation + proxy indirection + N middleware function calls + our res.json path**.
 

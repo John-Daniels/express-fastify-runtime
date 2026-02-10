@@ -13,16 +13,21 @@ When a handler needs Express-only APIs (e.g. **res.render**, **res.sendFile**), 
    const { fast, expressLane } = require('express-fastify-runtime');
    app.get('/page', expressLane((req, res) => res.render('index', { title: 'Hello' })));
    ```
-2. **Decorator (TypeScript):** use **@ExpressLane()** on a class method. Requires `"experimentalDecorators": true` in tsconfig.
+2. **Decorator (TypeScript):** use **@ExpressLane** or **@ExpressLane()** on a **class method**. Requires `"experimentalDecorators": true` in tsconfig. **Decorators are only valid on class members** — you cannot use `@ExpressLane` on a standalone `export const fn = ...`. For standalone handlers, use **expressLane(fn)** when registering the route (see 1).
    ```ts
    import { ExpressLane } from 'express-fastify-runtime';
    class PageController {
-     @ExpressLane()
+     @ExpressLane
      page(req: Request, res: Response) {
        res.render('index', { title: 'Hello' });
      }
    }
    app.get('/page', (req, res, next) => new PageController().page(req, res, next));
+   ```
+   **Standalone handler (e.g. CSV export):** use `expressLane()` when registering, not a decorator:
+   ```ts
+   const allBusinessExport = async (req, res) => { ... };
+   router.get('/businesses/export', expressLane(allBusinessExport));
    ```
 
 3. **Whole router (e.g. Swagger / docs that use res.render):** wrap the router with **expressLane(router)** so that path is not compiled to Fastify and stays on the Express lane.
@@ -107,7 +112,7 @@ These will throw, return wrong behavior, or 500 if you use them in routes/middle
 | **Streaming (res.write / pipe(res))** | Fastify lane uses reply.send(); streaming is not mapped 1:1 | Use Express lane for streaming responses, or implement with Fastify streams. |
 | **404** | Unhandled requests go to Express via setNotFoundHandler (same app, adapted req/res). Catch-all `app.use((req, res) => …)` is only run when no route matched (we run middleware in stack order before the matching route). | 404 behavior is correct; ensure your app’s 404 handler doesn’t rely on unsupported res/req APIs. |
 | **req.originalUrl / req.baseUrl / req.url** | Set and **writable** in the notFoundHandler adapter so Express router can mutate them. In Fastify lane they come from the request adapter used there. | Use as normal for routing; avoid mutating them in application code if you rely on them later. |
-| **Morgan / logging middleware** | On the Fastify lane, middleware runs in the preHandler. The adapted `res` delegates `.on()`, `.once()`, `.emit` to the underlying Node `ServerResponse` (reply.raw), so `res.on('finish', ...)` works and morgan logs when the response actually finishes. | Logs can appear slightly after the request “returns” or in a burst: the log runs on the `'finish'` event (when the response is fully flushed). If you send several requests quickly, multiple `'finish'` events may fire close together, so logs can appear in a batch. This is normal. |
+| **Morgan / logging middleware** | On the Fastify lane, middleware runs in the preHandler. The adapted `res` delegates `.on()`, `.once()`, `.emit` to the underlying Node `ServerResponse` (reply.raw), so `res.on('finish', ...)` works and morgan logs when the response actually finishes. | Logs can appear slightly after the request “returns” or in a burst: the log runs on the `'finish'` event (when the response is fully flushed). If you send several requests quickly, multiple `'finish'` events may fire close together, so logs can appear in a batch. With clients like Postman (keep-alive), a log appears when that response finishes—so a slow or held-open request logs only when it completes or the connection closes; that's expected. We no longer block the handler on 'finish', so with keep-alive (e.g. Postman) the response can flush and morgan logs when the response actually finishes, like Express. |
 
 ---
 

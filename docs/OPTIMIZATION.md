@@ -134,7 +134,7 @@ At **compile time** we turn Express routes into Fastify routes. So the route its
 1. **Adapter** — build Express-like `req`/`res` and attach to the Fastify request (reusable objects, but the adapter function still runs).
 2. **Middleware chain** — run the N Express middleware in the preHandler via `runMiddlewareChain` (each middleware is a real function call; plain Fastify uses N empty hooks).
 3. **Handler via adapter** — `res.json({ ok: true })` goes through our `res.json` → `reply.type().send()`, so one extra layer vs Fastify's direct `return { ok: true }`.
-4. **Finish waiter** — we wait on `reply.raw.once('finish')` so we don't return until the response is flushed (Express semantics). One Promise + one listener per request.
+4. **No finish waiter** — we do *not* await `reply.raw.once('finish')` before returning. With keep-alive (e.g. Postman), Node emits `'finish'` only when the response is flushed to the OS; keeping the handler open for `'finish'` can delay that flush until the client disconnects, so morgan would only log on disconnect. We return as soon as route handlers have run (like Express after `res.send()`), so the response can flush and morgan/on-finished run when the response actually finishes.
 
 So the **workload** is the same (N no-ops + one JSON response), but the **path** is "Fastify + adapter + Express middleware runner". That's why fast() is typically a few percent slower than plain Fastify in the **fast-vs-fastify** benchmark. We optimize to keep that gap small (see principles above); we don't remove the adapter entirely because we need full Express API compatibility.
 

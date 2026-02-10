@@ -27,6 +27,12 @@ type ExpressRequestListener = (
 /** Request with optional body (Express lane uses raw + body from Fastify). */
 export type IncomingMessageWithBody = IncomingMessage & { body?: unknown };
 
+/** Options for mountExpress (e.g. diagnostics). */
+export interface MountExpressOptions {
+  /** When true, log that the request is handled on the Express lane. */
+  diagnostics?: boolean;
+}
+
 /**
  * Mount Express app so that unhandled Fastify requests are proxied to it.
  * Uses the raw Node request/response so Express middleware and res.render() work.
@@ -34,8 +40,20 @@ export type IncomingMessageWithBody = IncomingMessage & { body?: unknown };
  * does not send a default response before Express has sent.
  * Attaches Fastify's parsed request.body to the request so req.body is available in Express.
  */
-export function mountExpress(fastify: FastifyInstance, expressApp: Application): void {
+export function mountExpress(
+  fastify: FastifyInstance,
+  expressApp: Application,
+  options?: MountExpressOptions,
+): void {
+  const diagnostics = options?.diagnostics === true;
+
   fastify.setNotFoundHandler(async (request: FastifyRequest, reply: FastifyReply) => {
+    if (diagnostics) {
+      const method = request.method ?? "GET";
+      const url = request.url ?? "/";
+      console.log(`[express-fastify-runtime] Express lane: ${method} ${url}`);
+    }
+
     const raw = request.raw;
     const res = reply.raw;
 

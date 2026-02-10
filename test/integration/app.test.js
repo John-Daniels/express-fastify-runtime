@@ -221,4 +221,49 @@ describe("fast(expressApp)", () => {
     );
     await fastify.close();
   });
+
+  it("runtime loaded first: mounted router route on Fastify lane returns 200 and req.baseUrl is set", async () => {
+    // This file imports express-fastify-runtime first (above), so Layer is patched; routes compile to Fastify lane
+    const app = express();
+    const v1 = Router();
+    v1.post("/admins/auth/login", (req, res) => {
+      assert.strictEqual(req.baseUrl, "/v1", "req.baseUrl should be mount path");
+      res.json({ ok: true, baseUrl: req.baseUrl });
+    });
+    app.use("/v1", v1);
+    const fastify = fast(app);
+    await fastify.listen({ port: 0, host: "127.0.0.1" });
+    const addr = fastify.server?.address();
+    assert.ok(addr && typeof addr === "object" && addr.port);
+    const res = await fetch(`http://127.0.0.1:${addr.port}/v1/admins/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    assert.strictEqual(res.status, 200, `expected 200, got ${res.status}`);
+    const body = await res.json();
+    assert.strictEqual(body.ok, true);
+    assert.strictEqual(body.baseUrl, "/v1");
+    await fastify.close();
+  });
+
+  it("res.getHeader and res.removeHeader work on Fastify lane", async () => {
+    const app = express();
+    app.get("/headers", (req, res) => {
+      res.setHeader("X-Custom", "value");
+      assert.ok(typeof res.getHeader === "function");
+      assert.strictEqual(res.getHeader("X-Custom"), "value");
+      res.removeHeader("X-Custom");
+      assert.strictEqual(res.getHeader("X-Custom"), undefined);
+      res.json({ ok: true });
+    });
+    const fastify = fast(app);
+    await fastify.listen({ port: 0, host: "127.0.0.1" });
+    const addr = fastify.server?.address();
+    assert.ok(addr && typeof addr === "object" && addr.port);
+    const res = await fetch(`http://127.0.0.1:${addr.port}/headers`);
+    assert.strictEqual(res.status, 200);
+    assert.deepStrictEqual(await res.json(), { ok: true });
+    await fastify.close();
+  });
 });

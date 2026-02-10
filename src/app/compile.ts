@@ -72,18 +72,21 @@ type RequestWithExpress = FastifyRequest & {
 };
 
 /**
- * Build preHandler: adapt once, run applicable middleware, attach req/res for handler.
+ * Build preHandler: adapt once, run applicable middleware (that appear before this route in the stack), attach req/res for handler.
+ * Only middleware with index < routeIndex in classified is run, so catch-all 404 handlers after the route do not run first.
  */
 function buildPreHandlersForPath(
   routePath: string,
   classified: ClassifiedRoute[],
+  routeIndex: number,
   adaptRequest: RequestAdapter,
   adaptResponse: ResponseAdapter,
 ): (request: FastifyRequest, reply: FastifyReply) => Promise<void> {
   const applicable: Array<
     (req: ExpressRequest, res: ExpressResponse, next: NextFunction) => void
   > = [];
-  for (const c of classified) {
+  for (let i = 0; i < classified.length && i < routeIndex; i++) {
+    const c = classified[i];
     if (c.lane !== "fastify" || c.type !== "middleware") continue;
     const path = c.path === "/" ? "/" : normalizePath(c.path);
     if (!pathMatches(path, routePath)) continue;
@@ -147,6 +150,10 @@ async function runRouteHandlers(
   await new Promise<void>((r) => reply.raw.once("finish", r));
 }
 
+export interface RegisterFastifyRoutesOptions {
+  diagnostics?: boolean;
+}
+
 /**
  * Register compiled Fastify routes (safe route entries only).
  * Adapt once in preHandler; handler reuses req/res from request.
@@ -157,13 +164,17 @@ export function registerFastifyRoutes(
   adaptRequest: RequestAdapter,
   adaptResponse: ResponseAdapter,
   _runMiddleware: RunMiddleware,
+  options?: RegisterFastifyRoutesOptions,
 ): void {
+  const diagnostics = options?.diagnostics === true;
+
   const routeEntries = classified.filter(
     (c) => c.type === "route" && c.lane === "fastify",
   );
   for (const entry of routeEntries) {
     if (entry.type !== "route") continue;
     const path = normalizePath(entry.path);
+    const routeIndex = classified.indexOf(entry);
     const methods =
       entry.method === "all"
         ? ([
@@ -179,6 +190,7 @@ export function registerFastifyRoutes(
     const preHandler = buildPreHandlersForPath(
       path,
       classified,
+      routeIndex,
       adaptRequest,
       adaptResponse,
     );
@@ -189,13 +201,29 @@ export function registerFastifyRoutes(
     >;
 
     for (const m of methods) {
+      const diagnosticsPreHandler =
+        diagnostics
+          ? async (request: FastifyRequest) => {
+              const url = request.url ?? path;
+              console.log(`[express-fastify-runtime] Fastify lane: ${m} ${url}`);
+            }
+          : undefined;
+
+      const preHandlers =
+        diagnosticsPreHandler != null
+          ? [diagnosticsPreHandler, preHandler]
+          : [preHandler];
+
       fastify.route({
         method: m,
         url: path,
-        preHandler: [preHandler],
+        preHandler: preHandlers,
         handler: async (request, reply) => {
           const req = (request as RequestWithExpress)[kExpressReq]!;
           const res = (request as RequestWithExpress)[kExpressRes]!;
+          // Set baseUrl from route path so handlers see Express-like base (e.g. /v1 for /v1/admins/auth/login)
+          const segments = path.split("/").filter(Boolean);
+          req.baseUrl = segments.length >= 1 ? "/" + segments[0] : "";
           await runRouteHandlers(
             handlers as Array<
               (

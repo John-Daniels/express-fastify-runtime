@@ -34,6 +34,52 @@ You can also use a **RegExp path** (e.g. `app.get(/^\/page/, fn)`) — RegExp ro
 
 ---
 
+## Why is everything on the Express lane?
+
+If **every** request (including `GET /` and JSON APIs like `POST /v1/admins/auth/login`) goes to the Express lane, it usually means **no routes were compiled to the Fastify lane**. That happens when the runtime cannot flatten the app’s router stack.
+
+**Main cause: load order**
+
+- **You must load express-fastify-runtime before creating the Express app or any router.**  
+  The runtime patches Express’s router `Layer` so it can see middleware paths. If the app is created first, those `Layer` instances never get the path metadata, so flattening fails and we compile zero Fastify routes → every request hits the notFoundHandler (Express lane).
+
+**Correct:** load the runtime first, then create the app:
+
+```js
+import 'express-fastify-runtime';  // or: require('express-fastify-runtime');
+import express from 'express';
+const app = express();
+app.get('/', (req, res) => res.send('Hello'));
+// ...
+```
+
+**Wrong:** create the app in one file and call `fast(app)` from another without ever importing the runtime before the app is created:
+
+```js
+// app.ts
+import express from 'express';
+const app = express();
+// ... no express-fastify-runtime import here ...
+export default app;
+
+// server.ts
+import app from './app';
+import { fast } from 'express-fastify-runtime';
+fast(app);  // app was already built without the patch → no Fastify routes
+```
+
+**Other causes**
+
+- A middleware layer is mounted with a **RegExp or array path** (e.g. `app.use(/^\/api/, fn)`). We need a string path for each layer; if we can’t read one, we abort flattening and compile no Fastify routes.
+- The app uses a **different copy** of the `router` package than the one we patch (e.g. nested workspaces). The patch runs from the runtime package, `process.cwd()`, and the **main script’s directory** (so e.g. `node examples/my-app/index.js` patches the `router` that `require('express')` resolves from that app). The same `router` the app uses must be patched.
+
+**Check**
+
+- Use **`experimental: { diagnostics: true }`** in `fast(app, { experimental: { diagnostics: true } })`. If you see “No routes compiled to Fastify lane” at startup, flattening failed. If you see “Express lane” for every request and never “Fastify lane”, same thing.
+- Fix load order so the first line of your app entry (or the file that creates the Express app) is `import 'express-fastify-runtime'` (or `require('express-fastify-runtime')`), then create the app and add routes.
+
+---
+
 ## Will fail or break at runtime
 
 These will throw, return wrong behavior, or 500 if you use them in routes/middleware that run on the Fastify lane or through the adapted req/res.
@@ -59,7 +105,7 @@ These will throw, return wrong behavior, or 500 if you use them in routes/middle
 | **Thrown errors (Express 5 style)** | In Express lane, Express 5 passes thrown errors to 4-arg middleware. In Fastify lane, throw is caught by Fastify then your wired 4-arg handler. | Use one 4-arg handler that does `res.status(500).json({ error: err.message })` (or your normal error responder). |
 | **Double res.send() / res.json()** | Second send triggers "Cannot set headers after they are sent" (Express lane) or Fastify "already sent" (Fastify lane). | Ensure each request path sends at most once. In **global error handlers**, guard with `if (!res.headersSent) res.status(500).json({ error: ... })` so you do not send after the response was already sent. |
 | **Streaming (res.write / pipe(res))** | Fastify lane uses reply.send(); streaming is not mapped 1:1 | Use Express lane for streaming responses, or implement with Fastify streams. |
-| **404** | Unhandled requests go to Express via setNotFoundHandler (same app, adapted req/res). | 404 behavior is correct; ensure your app’s 404 handler doesn’t rely on unsupported res/req APIs. |
+| **404** | Unhandled requests go to Express via setNotFoundHandler (same app, adapted req/res). Catch-all `app.use((req, res) => …)` is only run when no route matched (we run middleware in stack order before the matching route). | 404 behavior is correct; ensure your app’s 404 handler doesn’t rely on unsupported res/req APIs. |
 | **req.originalUrl / req.baseUrl / req.url** | Set and **writable** in the notFoundHandler adapter so Express router can mutate them. In Fastify lane they come from the request adapter used there. | Use as normal for routing; avoid mutating them in application code if you rely on them later. |
 
 ---

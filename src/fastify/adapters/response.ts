@@ -16,6 +16,35 @@ function normalizeHeaderValue(value: string | number | string[]): string {
   return String(value);
 }
 
+/**
+ * Wrap res in a Proxy that delegates unknown properties/methods to the raw Node response.
+ * Only delegates when the value exists and is callable; never calls .bind on undefined.
+ */
+function responseProxy<T extends ExpressResponse>(
+  res: T,
+  raw: import('node:http').ServerResponse,
+): T {
+  return new Proxy(res, {
+    get(target, prop: string | symbol) {
+      if (Object.prototype.hasOwnProperty.call(target, prop)) {
+        const v = Reflect.get(target, prop);
+        if (typeof v === 'function') return (v as Function).bind(target);
+        return v;
+      }
+      const rawVal = Reflect.get(raw, prop);
+      if (rawVal === undefined || rawVal === null) return rawVal;
+      if (typeof rawVal === 'function') return (rawVal as Function).bind(raw);
+      return rawVal;
+    },
+    has(target, prop) {
+      return (
+        Object.prototype.hasOwnProperty.call(target, prop) ||
+        Reflect.has(raw, prop)
+      );
+    },
+  }) as T;
+}
+
 /** One-shot adapter: creates a new res per call (e.g. for adaptResponse(reply, req)). */
 export function adaptResponse(fastifyReply: FastifyReply, _fastifyReq: FastifyRequest): ExpressResponse {
   const raw = fastifyReply.raw;
@@ -90,6 +119,11 @@ export function adaptResponse(fastifyReply: FastifyReply, _fastifyReq: FastifyRe
     return res;
   };
 
+  res.removeHeader = function (name: string) {
+    raw.removeHeader(name);
+    return res;
+  };
+
   res.append = function (field: string, value: string | string[]) {
     const prev = raw.getHeader(field);
     const next =
@@ -103,6 +137,10 @@ export function adaptResponse(fastifyReply: FastifyReply, _fastifyReq: FastifyRe
   res.get = function (field: string): string | undefined {
     const v = raw.getHeader(field);
     return v === undefined ? undefined : (Array.isArray(v) ? v.join(', ') : String(v));
+  };
+
+  res.getHeader = function (name: string) {
+    return raw.getHeader(name);
   };
 
   res.type = res.contentType = function (type: string) {
@@ -241,7 +279,7 @@ export function adaptResponse(fastifyReply: FastifyReply, _fastifyReq: FastifyRe
     return res;
   };
 
-  return res as ExpressResponse;
+  return responseProxy(res as ExpressResponse, raw);
 }
 
 /** Reusable adapter: one res object, mutated per request. */
@@ -314,6 +352,10 @@ export function createResponseAdapter(): (
       this._reply!.raw.setHeader(name, value as string);
       return this as unknown as ExpressResponse;
     },
+    removeHeader(name: string) {
+      this._reply!.raw.removeHeader(name);
+      return this as unknown as ExpressResponse;
+    },
     append(field: string, value: string | string[]) {
       const raw = this._reply!.raw;
       const prev = raw.getHeader(field);
@@ -327,6 +369,9 @@ export function createResponseAdapter(): (
     get(field: string): string | undefined {
       const v = this._reply!.raw.getHeader(field);
       return v === undefined ? undefined : (Array.isArray(v) ? v.join(', ') : String(v));
+    },
+    getHeader(name: string): string | number | string[] | undefined {
+      return this._reply!.raw.getHeader(name);
     },
     type(type: string) {
       if (!type.includes('/')) {
@@ -473,6 +518,6 @@ export function createResponseAdapter(): (
     res._reply = fastifyReply;
     (res as { _req?: FastifyRequest })._req = fastifyReq;
     res._locals = {};
-    return res as ExpressResponse;
+    return responseProxy(res as ExpressResponse, fastifyReply.raw);
   };
 }

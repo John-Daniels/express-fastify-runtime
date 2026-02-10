@@ -9,8 +9,8 @@
  * node_modules), the same router copy the app uses gets patched.
  */
 
-import { createRequire } from 'node:module';
-import path from 'node:path';
+import { createRequire } from "node:module";
+import path from "node:path";
 
 const requireFromPkg = createRequire(__filename);
 const thisDir = __dirname;
@@ -18,27 +18,29 @@ const thisDir = __dirname;
 type LayerCtor = (
   path: string | RegExp | Array<string | RegExp>,
   options: { sensitive?: boolean; strict?: boolean; end?: boolean },
-  fn: (req: unknown, res: unknown, next: unknown) => void
+  fn: (req: unknown, res: unknown, next: unknown) => void,
 ) => void;
 
 function patchLayerModule(layerModulePath: string): void {
   const layerModule = requireFromPkg.cache[layerModulePath];
   if (!layerModule) return;
-  const OriginalLayer = layerModule.exports as LayerCtor & { _pathPatched?: boolean };
+  const OriginalLayer = layerModule.exports as LayerCtor & {
+    _pathPatched?: boolean;
+  };
   if (!OriginalLayer || OriginalLayer._pathPatched) return;
 
   const PatchedLayer = function (
     this: unknown,
     pathArg: string | RegExp | Array<string | RegExp>,
     options: { sensitive?: boolean; strict?: boolean; end?: boolean },
-    fn: (req: unknown, res: unknown, next: unknown) => void
+    fn: (req: unknown, res: unknown, next: unknown) => void,
   ) {
     if (!(this instanceof (OriginalLayer as any))) {
       return new (OriginalLayer as any)(pathArg, options, fn);
     }
     (OriginalLayer as any).call(this, pathArg, options, fn);
     const layerInstance = this as { _path?: string };
-    if (typeof pathArg === 'string') {
+    if (typeof pathArg === "string") {
       layerInstance._path = pathArg;
     } else if (pathArg instanceof RegExp) {
       layerInstance._path = undefined;
@@ -55,7 +57,9 @@ const patchedPaths = new Set<string>();
 
 function tryPatchFrom(basePath: string): void {
   try {
-    const layerModulePath = requireFromPkg.resolve('router/lib/layer', { paths: [basePath] });
+    const layerModulePath = requireFromPkg.resolve("router/lib/layer", {
+      paths: [basePath],
+    });
     if (patchedPaths.has(layerModulePath)) return;
     patchedPaths.add(layerModulePath);
     requireFromPkg(layerModulePath);
@@ -67,8 +71,17 @@ function tryPatchFrom(basePath: string): void {
 
 try {
   tryPatchFrom(thisDir);
-  const cwd = typeof process !== 'undefined' ? process.cwd() : '';
+  const cwd = typeof process !== "undefined" ? process.cwd() : "";
   if (cwd && path.resolve(cwd) !== path.resolve(thisDir)) tryPatchFrom(cwd);
+  // Patch from the main script's directory so we patch the same router that the app's require('express') uses
+  // (e.g. app in examples/task-manager-api uses examples/node_modules/express → examples/node_modules/router)
+  const main = requireFromPkg.main;
+  const mainDir =
+    main && typeof main.filename === "string"
+      ? path.dirname(main.filename)
+      : "";
+  if (mainDir && path.resolve(mainDir) !== path.resolve(thisDir))
+    tryPatchFrom(mainDir);
 } catch {
   // router not available or different structure; flattening will fall back to express lane for routers with middleware
 }

@@ -61,6 +61,7 @@ export type ExpressResponse = ServerResponse & {
   json(body?: unknown): ExpressResponse;
   set(field: string | Record<string, string>, value?: string | string[]): ExpressResponse;
   setHeader(name: string, value: string | number | string[]): ServerResponse;
+  removeHeader(name: string): ExpressResponse;
   header(field: string | Record<string, string>, value?: string | string[]): ExpressResponse;
   sendStatus(code: number): ExpressResponse;
   links(links: Record<string, string>): ExpressResponse;
@@ -71,6 +72,7 @@ export type ExpressResponse = ServerResponse & {
   attachment(filename?: string): ExpressResponse;
   append(field: string, value: string | string[]): ExpressResponse;
   get(field: string): string | undefined;
+  getHeader(name: string): string | number | string[] | undefined;
   clearCookie(name: string, options?: CookieOptions): ExpressResponse;
   cookie(name: string, val: string | object, options?: CookieOptions): ExpressResponse;
   location(url: string): ExpressResponse;

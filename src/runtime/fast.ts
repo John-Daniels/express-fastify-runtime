@@ -39,9 +39,17 @@ interface ListenOptionsResult {
   cb?: ListenCallback;
 }
 
+/** Experimental options. May change or be removed. */
+export interface FastOpsExperimental {
+  /** When true, log each request with which lane handled it (Fastify vs Express). */
+  diagnostics?: boolean;
+}
+
 /** Options for fast(app, ops). More keys can be added later. */
 export interface FastOps {
   fastify?: FastifyServerOptions;
+  /** Experimental options (e.g. diagnostics logging). */
+  experimental?: FastOpsExperimental;
 }
 
 const DEFAULT_OPTS: FastifyServerOptions = {
@@ -85,6 +93,9 @@ export function fast(
       : (ops as FastifyServerOptions | undefined);
   const fastify = Fastify({ ...DEFAULT_OPTS, ...fastifyOpts });
 
+  const diagnostics =
+    ops && "experimental" in ops && ops.experimental?.diagnostics === true;
+
   const entries = introspectExpressApp(app as unknown as ExpressAppLike);
   if (entries !== null && entries.length > 0) {
     const classified = classifyAll(entries);
@@ -93,10 +104,14 @@ export function fast(
       res: ExpressResponse,
       next: NextFunction,
     ) => void = (_req, _res, next) => next();
-    registerCompiledRoutes(fastify, classified, noop);
+    registerCompiledRoutes(fastify, classified, noop, { diagnostics });
+  } else if (diagnostics) {
+    console.log(
+      "[express-fastify-runtime] No routes compiled to Fastify lane (all requests will use Express lane). See docs/FAST_PRODUCTION_CHECKLIST.md § Why is everything on the Express lane?",
+    );
   }
 
-  mountExpress(fastify, app);
+  mountExpress(fastify, app, { diagnostics });
 
   const expressErrorMiddleware = getExpressErrorMiddleware(
     app as unknown as ExpressAppLike,

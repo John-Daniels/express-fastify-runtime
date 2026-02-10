@@ -9,12 +9,18 @@ import { createRequestAdapter } from './adapters/request.js';
 import { createResponseAdapter } from './adapters/response.js';
 import { registerFastifyRoutes } from '../app/compile.js';
 
+export interface RegisterCompiledRoutesOptions {
+  /** When true, log that the request is handled on the Fastify lane. */
+  diagnostics?: boolean;
+}
+
 export function registerCompiledRoutes(
   fastify: FastifyInstance,
   classified: ClassifiedRoute[],
-  runMiddleware: (req: ExpressRequest, res: ExpressResponse, next: NextFunction) => void | Promise<void>
+  runMiddleware: (req: ExpressRequest, res: ExpressResponse, next: NextFunction) => void | Promise<void>,
+  options?: RegisterCompiledRoutesOptions,
 ): void {
   const adaptRequest = createRequestAdapter();
   const adaptResponse = createResponseAdapter();
-  registerFastifyRoutes(fastify, classified, adaptRequest, adaptResponse, runMiddleware);
+  registerFastifyRoutes(fastify, classified, adaptRequest, adaptResponse, runMiddleware, options);
 }

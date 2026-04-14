@@ -7,7 +7,7 @@
  * so you don't have to rely on RegExp paths.
  */
 
-import type { ExpressMiddleware, ExpressErrorMiddleware } from '../types/express.js';
+import type { ExpressMiddleware, ExpressErrorMiddleware } from '../types/express';
 
 /** Symbol attached to handlers that must run on the Express lane. */
 export const EXPRESS_LANE = Symbol.for('express-fastify-runtime.expressLane');

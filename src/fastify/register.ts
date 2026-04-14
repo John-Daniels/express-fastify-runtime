@@ -3,11 +3,11 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import type { ClassifiedRoute } from '../types/internal.js';
-import type { ExpressRequest, ExpressResponse, NextFunction } from '../types/express.js';
-import { createRequestAdapter } from './adapters/request.js';
-import { adaptResponse } from './adapters/response.js';
-import { registerFastifyRoutes } from '../app/compile.js';
+import type { ClassifiedRoute } from '../types/internal';
+import type { ExpressRequest, ExpressResponse, NextFunction } from '../types/express';
+import { createRequestAdapter } from './adapters/request';
+import { createResponseAdapter } from './adapters/response';
+import { registerFastifyRoutes } from '../app/compile';
 
 export interface RegisterCompiledRoutesOptions {
   /** When true, log that the request is handled on the Fastify lane. */
@@ -21,6 +21,6 @@ export function registerCompiledRoutes(
   options?: RegisterCompiledRoutesOptions,
 ): void {
   const adaptRequest = createRequestAdapter();
-  // One-shot adaptResponse so each request gets its own res with morgan-friendly 'finish' emit (no reused res).
+  const adaptResponse = createResponseAdapter();
   registerFastifyRoutes(fastify, classified, adaptRequest, adaptResponse, runMiddleware, options);
 }

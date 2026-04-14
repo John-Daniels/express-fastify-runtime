@@ -9,7 +9,7 @@ import type {
   ExpressResponse,
   ExpressHandler,
   HttpMethod,
-} from "./express.js";
+} from "./express";
 import type { Application, Router } from "express";
 
 /**

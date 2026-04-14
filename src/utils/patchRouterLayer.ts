@@ -73,8 +73,7 @@ try {
   tryPatchFrom(thisDir);
   const cwd = typeof process !== "undefined" ? process.cwd() : "";
   if (cwd && path.resolve(cwd) !== path.resolve(thisDir)) tryPatchFrom(cwd);
-  // Patch from the main script's directory so we patch the same router that the app's require('express') uses
-  // (e.g. app in examples/task-manager-api uses examples/node_modules/express → examples/node_modules/router)
+  // Patch from the main script's directory (CJS entry) so we patch the same router the app uses
   const main = requireFromPkg.main;
   const mainDir =
     main && typeof main.filename === "string"
@@ -82,6 +81,22 @@ try {
       : "";
   if (mainDir && path.resolve(mainDir) !== path.resolve(thisDir))
     tryPatchFrom(mainDir);
+  // When entry is ESM, require.main is often undefined; use process.argv[1] so we still patch from the entry script's context
+  const entryScript =
+    typeof process !== "undefined" &&
+    process.argv[1] &&
+    path.isAbsolute(process.argv[1])
+      ? process.argv[1]
+      : process.argv[1]
+        ? path.resolve(cwd || ".", process.argv[1])
+        : "";
+  const entryDir = entryScript ? path.dirname(entryScript) : "";
+  if (
+    entryDir &&
+    path.resolve(entryDir) !== path.resolve(thisDir) &&
+    path.resolve(entryDir) !== path.resolve(mainDir)
+  )
+    tryPatchFrom(entryDir);
 } catch {
   // router not available or different structure; flattening will fall back to express lane for routers with middleware
 }

@@ -7,9 +7,9 @@
  * If the app cannot be flattened (e.g. unpatched middleware), returns null.
  */
 
-import type { RouteEntry } from '../types/internal.js';
-import type { ExpressLayerLike, ExpressRouterLike } from './flattenRouter.js';
-import { flattenRouter } from './flattenRouter.js';
+import type { RouteEntry } from '../types/internal';
+import type { ExpressLayerLike, ExpressRouterLike } from './flattenRouter';
+import { flattenRouter } from './flattenRouter';
 
 /** Express app shape: has optional router with stack (lazy-initialized). */
 export interface ExpressAppLike {
@@ -31,9 +31,9 @@ export function introspectExpressApp(app: ExpressAppLike): RouteEntry[] | null {
 /** Express 4-arg error middleware type. */
 export type ExpressErrorMiddleware = (
   err: Error,
-  req: import('../types/express.js').ExpressRequest,
-  res: import('../types/express.js').ExpressResponse,
-  next: import('../types/express.js').NextFunction
+  req: import('../types/express').ExpressRequest,
+  res: import('../types/express').ExpressResponse,
+  next: import('../types/express').NextFunction
 ) => void | Promise<void>;
 
 /**

@@ -16,7 +16,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { Application } from 'express';
-import { applyMaxListeners } from '../utils/maxListeners.js';
+import { applyMaxListeners } from '../utils/maxListeners';
 
 /** Express app signature: (req, res, next) => void */
 type ExpressRequestListener = (

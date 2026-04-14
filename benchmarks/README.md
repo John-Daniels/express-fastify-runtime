@@ -6,7 +6,8 @@ Compare **Express**, **Fastify**, **Node.js http**, and **express-fastify-runtim
 
 - Node.js >= 18
 - Dependencies installed (`npm install` in repo root)
-- Build the runtime: `npm run build`
+
+`npm run benchmark` and `npm run benchmark:servers` run `npm run build` first so results reflect the built runtime.
 
 ## Scenario
 
@@ -83,6 +84,23 @@ Same env: `MW`, `PORT`, `DURATION`.
 
 ---
 
+## fast() best practice
+
+For **fast(expressApp)** to compile routes to the Fastify lane (especially with `express.Router()` and `router.use(path, fn)`), load the runtime **before** Express so the Router Layer is patched:
+
+```js
+import "express-fastify-runtime";  // or import "../../dist/index.js" in benchmarks
+import express from "express";
+import { fast } from "express-fastify-runtime";
+const app = express();
+// ...
+const fastify = fast(app);
+```
+
+All `*-fast` benchmark files use this order so fast() numbers are comparable to createApp.
+
+---
+
 ## fast() scenarios (where fast() wins or fails)
 
 Benchmark **fast(expressApp)** across multiple scenarios to see where it beats plain Express and where it degrades or hits the Express lane.
@@ -113,6 +131,17 @@ npm run benchmark:fast-vs-fastify
 ```
 
 Use `--minimal` or `MW=0` to measure pure route overhead (no middleware). See `benchmarks/fast-vs-fastify/README.md` and `docs/OPTIMIZATION.md` (§5) for why there is a gap and what we optimize.
+
+---
+
+## When Express wins (IO-heavy, large payloads)
+
+Express has the **smallest per-request stack** (no Fastify, no adapters). So it can win when:
+
+- **IO-heavy handlers** (e.g. LowDB-like benchmark: sync file read/write per request). The handler dominates latency; our fixed overhead (adapters, Fastify lifecycle) is a larger share of total time, so we do fewer req/s. Fastify can also be slower than Express there for the same reason.
+- **Very large payloads (1MB+)** in some conditions. Both we and Fastify buffer the body; Express’s minimal pipeline can come out ahead depending on body parser and connection handling.
+
+We optimize for the common case: **fast handlers** (servers, routes, CRUD with in-memory or fast DB) and **small/medium payloads**, where we match or beat Express and get close to Fastify.
 
 ---
 

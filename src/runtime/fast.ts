@@ -11,25 +11,25 @@ import Fastify, {
   type FastifyServerOptions,
 } from "fastify";
 import type { Application } from "express";
-import { classifyAll } from "../app/classify.js";
+import { classifyAll } from "../app/classify";
 import {
   introspectExpressApp,
   getExpressErrorMiddleware,
   type ExpressAppLike,
-} from "../app/introspectExpress.js";
-import { mountExpress } from "../express/mount.js";
-import { createRequestAdapter } from "../fastify/adapters/request.js";
+} from "../app/introspectExpress";
+import { mountExpress } from "../express/mount";
+import { createRequestAdapter } from "../fastify/adapters/request";
 import {
   createResponseAdapter,
   adaptResponse as adaptResponseOneShot,
-} from "../fastify/adapters/response.js";
-import { registerCompiledRoutes } from "../fastify/register.js";
-import { wrapErrorHandler } from "./errorHandler.js";
+} from "../fastify/adapters/response";
+import { registerCompiledRoutes } from "../fastify/register";
+import { wrapErrorHandler } from "./errorHandler";
 import type {
   ExpressRequest,
   ExpressResponse,
   NextFunction,
-} from "../types/express.js";
+} from "../types/express";
 
 // Types for the server.listen wrapper (readable names, no inline imports)
 type ListenCallback = (err: Error | null, address: string) => void;

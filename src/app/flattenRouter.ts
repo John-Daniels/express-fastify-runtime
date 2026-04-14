@@ -7,10 +7,10 @@
  * we only flatten routers that have no middleware layers (route-only).
  */
 
-import type { RouteEntry } from '../types/internal.js';
-import type { ExpressHandler } from '../types/express.js';
-import { isExpressLaneHandler } from '../runtime/expressLane.js';
-import { joinPath } from '../utils/path.js';
+import type { RouteEntry } from '../types/internal';
+import type { ExpressHandler } from '../types/express';
+import { isExpressLaneHandler } from '../runtime/expressLane';
+import { joinPath } from '../utils/path';
 
 /** Minimal Express Router shape (express + router package). */
 export interface ExpressRouterLike {

@@ -9,7 +9,7 @@ import accepts from 'accepts';
 import parseRange from 'range-parser';
 import typeis from 'type-is';
 import type { FastifyRequest } from 'fastify';
-import type { ExpressRequest } from '../../types/express.js';
+import type { ExpressRequest } from '../../types/express';
 
 /** Express: Referer and Referrer are interchangeable. */
 function getHeader(

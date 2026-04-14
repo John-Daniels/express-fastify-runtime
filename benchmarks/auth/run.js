@@ -1,9 +1,7 @@
-import { spawn } from "node:child_process";
-import net from "node:net";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+const { spawn } = require("node:child_process");
+const net = require("node:net");
+const { join } = require("node:path");
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, "../..");
 
 const BASE_PORT = Number(process.env.PORT) || 3001;
@@ -14,20 +12,23 @@ const targets = [];
 if (process.argv.includes("--express")) targets.push("express");
 if (process.argv.includes("--fastify")) targets.push("fastify");
 if (process.argv.includes("--runtime")) targets.push("express-fastify-runtime");
+if (process.argv.includes("--runtime-fast")) targets.push("express-fastify-runtime-fast");
 if (targets.length === 0) {
-  targets.push("express", "fastify", "express-fastify-runtime");
+  targets.push("express", "fastify", "express-fastify-runtime", "express-fastify-runtime-fast");
 }
 
 const ports = {
   express: BASE_PORT,
   fastify: BASE_PORT + 1,
   "express-fastify-runtime": BASE_PORT + 3,
+  "express-fastify-runtime-fast": BASE_PORT + 4,
 };
 
 const serverFiles = {
   express: join(__dirname, "express.js"),
   fastify: join(__dirname, "fastify.js"),
   "express-fastify-runtime": join(__dirname, "express-fastify-runtime.js"),
+  "express-fastify-runtime-fast": join(__dirname, "express-fastify-runtime-fast.js"),
 };
 
 function waitForPort(port, timeoutMs = 8000) {
@@ -55,12 +56,15 @@ function getToken(port) {
 }
 
 async function runAutocannon(port, token) {
-  const autocannon = await import("autocannon").catch(() => null);
-  if (!autocannon) {
+  let autocannon;
+  try {
+    const mod = await import("autocannon");
+    autocannon = mod.default;
+  } catch (_) {
     console.log("  (install: npm i -D autocannon)");
     return;
   }
-  const result = await autocannon.default({
+  const result = await autocannon({
     url: `http://127.0.0.1:${port}/protected`,
     headers: { Authorization: `Bearer ${token}` },
     duration: Number(DURATION),

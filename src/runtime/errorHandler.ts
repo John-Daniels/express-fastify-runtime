@@ -3,7 +3,7 @@
  */
 
 import type { FastifyError, FastifyRequest, FastifyReply } from 'fastify';
-import type { ExpressRequest, ExpressResponse, ExpressErrorMiddleware } from '../types/express.js';
+import type { ExpressRequest, ExpressResponse, ExpressErrorMiddleware } from '../types/express';
 
 /** Build Express-like res for the error handler (status, send, json, set, setHeader, locals, headersSent). */
 function errorHandlerRes(reply: FastifyReply): ExpressResponse {

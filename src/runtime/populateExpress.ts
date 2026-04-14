@@ -3,8 +3,8 @@
  */
 
 import type { Application } from 'express';
-import type { RouteStore } from '../app/RouteStore.js';
-import { normalizePath } from '../utils/path.js';
+import type { RouteStore } from '../app/RouteStore';
+import { normalizePath } from '../utils/path';
 
 export function populateExpressApp(expressApp: Application, store: RouteStore): void {
   const entries = store.getAll();

@@ -32,15 +32,20 @@ export function applyMaxListeners(
   rawRes: ServerResponse,
   limit: number = DEFAULT_MAX_LISTENERS,
 ): void {
+  // Hot path: when limit is Infinity (default), skip getMaxListeners (saves two calls per request).
   if (typeof rawRes.setMaxListeners === "function") {
-    rawRes.setMaxListeners(
-      limit === Infinity ? Infinity : Math.max(rawRes.getMaxListeners?.() ?? 10, limit),
-    );
+    if (limit === Infinity) {
+      rawRes.setMaxListeners(Infinity);
+    } else {
+      rawRes.setMaxListeners(Math.max(rawRes.getMaxListeners?.() ?? 10, limit));
+    }
   }
   const socket = rawReq?.socket;
   if (socket && typeof socket.setMaxListeners === "function") {
-    socket.setMaxListeners(
-      limit === Infinity ? Infinity : Math.max(socket.getMaxListeners?.() ?? 10, limit),
-    );
+    if (limit === Infinity) {
+      socket.setMaxListeners(Infinity);
+    } else {
+      socket.setMaxListeners(Math.max(socket.getMaxListeners?.() ?? 10, limit));
+    }
   }
 }

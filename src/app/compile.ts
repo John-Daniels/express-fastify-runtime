@@ -1,22 +1,22 @@
 /**
  * Compile classified routes to Fastify (preHandler + routes).
- * Single compile; no runtime middleware resolution.
- * Optimized: reusable adapters, sync-first middleware loop, minimal Promise.
+ * Maximize work at compile/registration time; at runtime we only adapt req/res and run
+ * prebuilt handler chains. No runtime middleware resolution; reusable adapters; sync-first.
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import type { ClassifiedRoute } from "../types/internal.js";
+import type { ClassifiedRoute } from "../types/internal";
 import type {
   ExpressRequest,
   ExpressResponse,
   ExpressHandler,
   NextFunction,
-} from "../types/express.js";
-import type { RequestAdapter } from "../types/internal.js";
-import type { ResponseAdapter } from "../types/internal.js";
-import { normalizePath } from "../utils/path.js";
-import { applyMaxListeners } from "../utils/maxListeners.js";
-import { isExpressJson, expressJsonPassthrough } from "../express/middleware.js";
+} from "../types/express";
+import type { RequestAdapter } from "../types/internal";
+import type { ResponseAdapter } from "../types/internal";
+import { normalizePath } from "../utils/path";
+import { applyMaxListeners } from "../utils/maxListeners";
+import { isExpressJson, expressJsonPassthrough } from "../express/middleware";
 
 export type RunMiddleware = (
   req: ExpressRequest,
@@ -106,6 +106,7 @@ function buildPreHandlersForPath(
       applicable.push(fn);
     }
   }
+  const hasMiddleware = applicable.length > 0;
   return async (request: RequestWithExpress, reply: FastifyReply) => {
     applyMaxListeners(request.raw, reply.raw);
     const req = adaptRequest(request);
@@ -113,7 +114,7 @@ function buildPreHandlersForPath(
     request[kExpressReq] = req;
     request[kExpressRes] = res;
     (res as ExpressResponse & { req?: ExpressRequest }).req = req;
-    await runMiddlewareChain(applicable, req, res, reply);
+    if (hasMiddleware) await runMiddlewareChain(applicable, req, res, reply);
   };
 }
 
@@ -231,12 +232,9 @@ export function registerFastifyRoutes(
           const req = (request as RequestWithExpress)[kExpressReq]!;
           const res = (request as RequestWithExpress)[kExpressRes]!;
           // Morgan's :response-time needs res._startAt. Morgan sets it via onHeaders(res, recordStartTime)
-          // which wraps res.writeHead; Fastify calls raw.writeHead, so we patch raw.writeHead to set
-          // res._startAt when headers are written (same as morgan's recordStartTime).
           const raw = reply.raw as import("node:http").ServerResponse & {
             _efrWriteHeadPatched?: boolean;
           };
-          // Morgan :response-time needs res._startAt when headers are written (Express uses onHeaders).
           if (!raw._efrWriteHeadPatched) {
             raw._efrWriteHeadPatched = true;
             const origWriteHead = raw.writeHead.bind(raw);
@@ -249,21 +247,31 @@ export function registerFastifyRoutes(
               return (origWriteHead as (...a: unknown[]) => ReturnType<typeof origWriteHead>).apply(this, args);
             };
           }
-          // Set baseUrl from route path so handlers see Express-like base (e.g. /v1 for /v1/admins/auth/login)
           const segments = path.split("/").filter(Boolean);
           req.baseUrl = segments.length >= 1 ? "/" + segments[0] : "";
-          await runRouteHandlers(
-            handlers as Array<
-              (
-                req: ExpressRequest,
-                res: ExpressResponse,
-                next: NextFunction,
-              ) => void
-            >,
-            req,
-            res,
-            reply,
-          );
+          // Fast path: single handler — no loop, no next() (per PLAN_FASTIFY_CLOSER.md Tier 1.1).
+          if (handlers.length === 1) {
+            const fn = handlers[0];
+            const result = fn(req, res, (err?: Error | unknown) => {
+              if (err) throw err;
+            }) as void | Promise<void>;
+            if (result != null && typeof (result as Promise<unknown>).then === "function") {
+              await (result as unknown as Promise<void>);
+            }
+          } else {
+            await runRouteHandlers(
+              handlers as Array<
+                (
+                  req: ExpressRequest,
+                  res: ExpressResponse,
+                  next: NextFunction,
+                ) => void
+              >,
+              req,
+              res,
+              reply,
+            );
+          }
         },
       });
     }

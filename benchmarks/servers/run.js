@@ -3,14 +3,13 @@
  * Run benchmarks: start each server, run autocannon, report.
  * Usage: node benchmarks/run.js [--express] [--fastify] [--node-http] [--runtime]
  * Default: run all four.
+ * (CommonJS so Node does not emit MODULE_TYPELESS_PACKAGE_JSON when package has no "type": "module".)
  */
 
-import { spawn } from "node:child_process";
-import net from "node:net";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+const { spawn } = require("node:child_process");
+const net = require("node:net");
+const { join } = require("node:path");
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, "../..");
 
 const BASE_PORT = Number(process.env.PORT) || 3001;
@@ -62,12 +61,15 @@ function waitForPort(port, timeoutMs = 8000) {
 }
 
 async function runAutocannon(port) {
-  const autocannon = await import("autocannon").catch(() => null);
-  if (!autocannon) {
+  let autocannon;
+  try {
+    const mod = await import("autocannon");
+    autocannon = mod.default;
+  } catch (_) {
     console.log("  (install: npm i -D autocannon)");
     return;
   }
-  const result = await autocannon.default({
+  const result = await autocannon({
     url: `http://127.0.0.1:${port}/`,
     duration: Number(DURATION),
     connections: 10,

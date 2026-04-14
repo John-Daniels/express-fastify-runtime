@@ -3,11 +3,11 @@
  * Routes are immutable after listen(). Full Router handling is in lifecycle.ts.
  */
 
-import type { ExpressHandler } from '../types/express.js';
-import type { ExpressLikeApp as IExpressLikeApp, ServerLike, UseHandler } from '../types/internal.js';
-import { assertNotLocked } from '../utils/assert.js';
+import type { ExpressHandler } from '../types/express';
+import type { ExpressLikeApp as IExpressLikeApp, ServerLike, UseHandler } from '../types/internal';
+import { assertNotLocked } from '../utils/assert';
 
-export function createExpressLikeApp(routeStore: import('./RouteStore.js').RouteStore, locked: { current: boolean }) {
+export function createExpressLikeApp(routeStore: import('./RouteStore').RouteStore, locked: { current: boolean }) {
   const app: IExpressLikeApp = {
     use(pathOrHandler: string | UseHandler, ...handlers: UseHandler[]) {
       assertNotLocked(locked.current);

@@ -3,7 +3,7 @@
  * If unsure → Express lane. Never silently downgrade.
  */
 
-import type { ExpressHandler } from '../types/express.js';
+import type { ExpressHandler } from '../types/express';
 
 const UNSAFE_NAMES = new Set([
   'multer',

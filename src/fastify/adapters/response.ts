@@ -7,7 +7,7 @@
 import { STATUS_CODES as HTTP_STATUS_CODES } from 'node:http';
 import encodeUrl from 'encodeurl';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { CookieOptions, ExpressResponse } from '../../types/express.js';
+import type { CookieOptions, ExpressResponse } from '../../types/express';
 
 const STATUS_CODES = HTTP_STATUS_CODES as Record<number, string>;
 
@@ -102,7 +102,9 @@ export function adaptResponse(fastifyReply: FastifyReply, _fastifyReq: FastifyRe
 
   // Emit 'finish' after send so morgan/on-finished run per-request. Use double setImmediate so
   // Fastify's sync send (writeHead + end) has run and res._startAt/status/headers are set (no " - - ms - -").
+  // Skip async work when no one listens (hot path: res.json() with no res.on('finish')).
   function afterSend(): void {
+    if (finishListeners.length === 0) return;
     setImmediate(() => setImmediate(() => emitFinishNextTick(res)));
   }
   function emitFinishNextTick(r: ExpressResponse & { __efrEmitFinish?: () => void }): void {
@@ -346,14 +348,28 @@ export function adaptResponse(fastifyReply: FastifyReply, _fastifyReq: FastifyRe
   return responseProxy(res as ExpressResponse, raw);
 }
 
-/** Reusable adapter: one res object, mutated per request. */
+/** Run captured finish listeners after send (morgan-friendly; only when someone listened). */
+function emitFinishListeners(listeners: Array<{ fn: (...args: unknown[]) => void }>): void {
+  listeners.forEach(({ fn }) => {
+    try {
+      fn();
+    } catch (_) {
+      /* ignore */
+    }
+  });
+}
+
+/** Reusable adapter: one res object, mutated per request. Zero alloc hot path; finish/end supported for morgan. */
 export function createResponseAdapter(): (
   fastifyReply: FastifyReply,
   fastifyReq: FastifyRequest
 ) => ExpressResponse {
+  const finishListeners: Array<{ fn: (...args: unknown[]) => void; once: boolean }> = [];
+
   const res = {
     _reply: null as FastifyReply | null,
     _locals: {} as Record<string, unknown>,
+    _finishListeners: finishListeners,
     get locals() {
       return this._locals;
     },
@@ -363,19 +379,58 @@ export function createResponseAdapter(): (
     get headersSent() {
       return this._reply?.raw.headersSent ?? false;
     },
+    get statusCode() {
+      return this._reply?.raw.statusCode ?? 200;
+    },
+    on(event: string, listener: (...args: unknown[]) => void) {
+      if (event === 'finish' || event === 'end') {
+        finishListeners.push({ fn: listener, once: false });
+        return this as unknown as ExpressResponse;
+      }
+      (this._reply!.raw as NodeJS.EventEmitter).on(event, listener as (...args: unknown[]) => void);
+      return this as unknown as ExpressResponse;
+    },
+    once(event: string, listener: (...args: unknown[]) => void) {
+      if (event === 'finish' || event === 'end') {
+        finishListeners.push({ fn: listener, once: true });
+        return this as unknown as ExpressResponse;
+      }
+      (this._reply!.raw as NodeJS.EventEmitter).once(event, listener as (...args: unknown[]) => void);
+      return this as unknown as ExpressResponse;
+    },
+    emit(event: string, ...args: unknown[]) {
+      if (event === 'finish' || event === 'end') {
+        const toRun = [...finishListeners];
+        finishListeners.length = 0;
+        emitFinishListeners(toRun);
+        return true;
+      }
+      return (this._reply!.raw as NodeJS.EventEmitter).emit(event, ...args);
+    },
     status(code: number) {
       this._reply!.raw.statusCode = code;
       return this as unknown as ExpressResponse;
     },
     sendStatus(code: number) {
-      this._reply!.raw.statusCode = code;
+      const r = this._reply!;
+      r.raw.statusCode = code;
       const body = STATUS_CODES[code] || String(code);
-      this._reply!.type('text/plain').send(body);
+      r.type('text/plain').send(body);
+      if (finishListeners.length > 0) {
+        const toRun = [...finishListeners];
+        finishListeners.length = 0;
+        setImmediate(() => setImmediate(() => emitFinishListeners(toRun)));
+      }
       return this as unknown as ExpressResponse;
     },
     send(body?: unknown) {
       const r = this._reply!;
       const raw = r.raw;
+      if (finishListeners.length > 0) {
+        const toRun = [...finishListeners];
+        finishListeners.length = 0;
+        setImmediate(() => setImmediate(() => emitFinishListeners(toRun)));
+      }
       if (body === undefined) {
         raw.end();
         return this as unknown as ExpressResponse;
@@ -384,7 +439,6 @@ export function createResponseAdapter(): (
         r.type('application/json').send(body);
         return this as unknown as ExpressResponse;
       }
-      // Express: string defaults to html when Content-Type not set (response.js send())
       if (typeof body === 'string' && !raw.getHeader('Content-Type')) {
         r.type('text/html').send(body);
         return this as unknown as ExpressResponse;
@@ -393,10 +447,20 @@ export function createResponseAdapter(): (
       return this as unknown as ExpressResponse;
     },
     json(body?: unknown) {
+      if (finishListeners.length > 0) {
+        const toRun = [...finishListeners];
+        finishListeners.length = 0;
+        setImmediate(() => setImmediate(() => emitFinishListeners(toRun)));
+      }
       this._reply!.type('application/json').send(body);
       return this as unknown as ExpressResponse;
     },
     jsonp(body?: unknown) {
+      if (finishListeners.length > 0) {
+        const toRun = [...finishListeners];
+        finishListeners.length = 0;
+        setImmediate(() => setImmediate(() => emitFinishListeners(toRun)));
+      }
       this._reply!.type('application/json').send(body);
       return this as unknown as ExpressResponse;
     },
@@ -493,6 +557,11 @@ export function createResponseAdapter(): (
       } else {
         target = urlOrStatus;
       }
+      if (finishListeners.length > 0) {
+        const toRun = [...finishListeners];
+        finishListeners.length = 0;
+        setImmediate(() => setImmediate(() => emitFinishListeners(toRun)));
+      }
       r.raw.statusCode = status;
       r.raw.setHeader('Location', target);
       r.send();
@@ -576,12 +645,16 @@ export function createResponseAdapter(): (
     _reply: FastifyReply | null;
     _req?: FastifyRequest;
     _locals: Record<string, unknown>;
+    _finishListeners: Array<{ fn: (...args: unknown[]) => void; once: boolean }>;
   };
 
+  // Return res directly (no Proxy): handler calls like res.json() are direct method calls.
+  // All Express response API used by apps/morgan are implemented above on res.
   return (fastifyReply: FastifyReply, fastifyReq?: FastifyRequest) => {
     res._reply = fastifyReply;
     (res as { _req?: FastifyRequest })._req = fastifyReq;
     res._locals = {};
-    return responseProxy(res as ExpressResponse, fastifyReply.raw);
+    finishListeners.length = 0;
+    return res as ExpressResponse;
   };
 }

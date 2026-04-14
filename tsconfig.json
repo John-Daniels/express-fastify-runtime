@@ -5,6 +5,7 @@
     "moduleResolution": "Node",
     "outDir": "dist",
     "rootDir": "src",
+    "allowJs": true,
     "strict": true,
     "declaration": true,
     "declarationMap": true,

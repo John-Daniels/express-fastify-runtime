@@ -3,8 +3,8 @@
  * Uses Express lane for multer / multipart; same API as Express.
  */
 
-import { createApp } from '../index.js';
-import type { ExpressRequest, ExpressResponse, NextFunction } from '../types/express.js';
+import { createApp } from '../index';
+import type { ExpressRequest, ExpressResponse, NextFunction } from '../types/express';
 
 const app = createApp();
 

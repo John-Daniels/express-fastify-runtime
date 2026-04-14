@@ -3,9 +3,9 @@
  */
 
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import type { ExpressRequest, ExpressResponse, NextFunction } from '../../types/express.js';
-import { adaptRequest } from './request.js';
-import { adaptResponse } from './response.js';
+import type { ExpressRequest, ExpressResponse, NextFunction } from '../../types/express';
+import { adaptRequest } from './request';
+import { adaptResponse } from './response';
 
 export type MiddlewareRunner = (
   req: ExpressRequest,

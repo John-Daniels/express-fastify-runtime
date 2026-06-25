@@ -8,7 +8,7 @@ import type { ExpressHandler } from '../types/express';
 import { classifyAll } from '../app/classify';
 import { createExpressEngine } from '../express/engine';
 import { mountExpress } from '../express/mount';
-import { registerCompiledRoutes } from '../fastify/register';
+import { registerCompiledRoutes, installExpressJsonParser } from '../fastify/register';
 import { populateExpressApp } from './populateExpress';
 import { assertNotLocked } from '../utils/assert';
 import { findErrorMiddleware, wrapErrorHandler } from './errorHandler';
@@ -141,6 +141,7 @@ export function createApp(options?: CreateAppOptions): ExpressLikeApp {
   logger: false,
   bodyLimit: 10 * 1024 * 1024, // 10MB; matches express.json({ limit: '10mb' }) for large payloads
 });
+      installExpressJsonParser(fastify); // match express.json(): tolerate empty bodies (→ {})
       const classified = classifyAll(routeStore.getAll());
       const runMiddleware = (
         _req: import('../types/express').ExpressRequest,

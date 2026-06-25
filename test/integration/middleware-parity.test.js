@@ -75,6 +75,39 @@ describe("middleware parity on fast()", () => {
     await fastify.close();
   });
 
+  it("express.json() tolerates an empty body (→ {}) and still 400s on malformed JSON", async () => {
+    // Express's body-parser sets req.body = {} for an empty body; Fastify's default JSON parser
+    // 400s with FST_ERR_CTP_EMPTY_JSON_BODY. Clients send `content-type: application/json` with no
+    // body on bodyless POST/PUT/DELETE, so we must match Express. Malformed JSON still 400s (parity).
+    const app = express();
+    app.use(express.json());
+    app.post("/x", (req, res) => res.json({ body: req.body }));
+
+    const { fastify, port } = await listen(app);
+
+    const empty = await fetch(`http://127.0.0.1:${port}/x`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    });
+    assert.strictEqual(empty.status, 200, "empty JSON body must not 400");
+    assert.deepStrictEqual(await empty.json(), { body: {} });
+
+    const valid = await fetch(`http://127.0.0.1:${port}/x`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ a: 1 }),
+    });
+    assert.deepStrictEqual(await valid.json(), { body: { a: 1 } });
+
+    const bad = await fetch(`http://127.0.0.1:${port}/x`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{not json",
+    });
+    assert.strictEqual(bad.status, 400, "malformed JSON must still 400");
+    await fastify.close();
+  });
+
   it("res.cookie writes Set-Cookie and req.cookies parses incoming cookies", async () => {
     const app = express();
     app.get("/set", (req, res) => {

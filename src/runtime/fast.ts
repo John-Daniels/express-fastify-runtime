@@ -23,7 +23,7 @@ import {
   createResponseAdapter,
   adaptResponse as adaptResponseOneShot,
 } from "../fastify/adapters/response";
-import { registerCompiledRoutes } from "../fastify/register";
+import { registerCompiledRoutes, installExpressJsonParser } from "../fastify/register";
 import { wrapErrorHandler } from "./errorHandler";
 import type {
   ExpressRequest,
@@ -124,6 +124,7 @@ export function fast(
       ? ops.fastify
       : (ops as FastifyServerOptions | undefined);
   const fastify = Fastify({ ...DEFAULT_OPTS, ...fastifyOpts });
+  installExpressJsonParser(fastify); // match express.json(): tolerate empty bodies (→ {})
 
   const diagnostics =
     ops && "experimental" in ops && ops.experimental?.diagnostics === true;

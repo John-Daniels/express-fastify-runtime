@@ -8,7 +8,7 @@ import "./utils/patchRouterLayer";
 export { createApp } from "./runtime/lifecycle";
 export type { CreateAppOptions } from "./runtime/lifecycle";
 export { fast } from "./runtime/fast";
-export type { FastOps, FastOpsExperimental } from "./runtime/fast";
+export type { FastOps, FastOpsExperimental, ExpressApp } from "./runtime/fast";
 export {
   expressLane,
   ExpressLane,

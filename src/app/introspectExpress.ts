@@ -11,17 +11,33 @@ import type { RouteEntry } from '../types/internal';
 import type { ExpressLayerLike, ExpressRouterLike } from './flattenRouter';
 import { flattenRouter } from './flattenRouter';
 
-/** Express app shape: has optional router with stack (lazy-initialized). */
+/** Express app shape: Express 5 exposes `app.router`; Express 4 uses the private `app._router`. */
 export interface ExpressAppLike {
   router?: ExpressRouterLike;
+  _router?: ExpressRouterLike;
 }
 
 /**
- * Walk app.router.stack and convert to RouteEntry[] with mount path '/'.
+ * Get the app's router stack across Express majors.
+ * Express 4: `app._router` (present after the first route/middleware); `app.router` getter THROWS.
+ * Express 5: `app.router` is a lazy getter; `app._router` is undefined.
+ * Check `_router` first so we never touch Express 4's throwing getter; guard `app.router` anyway.
+ */
+function getAppRouter(app: ExpressAppLike): ExpressRouterLike | undefined {
+  if (app._router) return app._router;
+  try {
+    return app.router;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Walk the app's router stack and convert to RouteEntry[] with mount path '/'.
  * Returns null if the app has middleware layers we can't flatten (e.g. no _path).
  */
 export function introspectExpressApp(app: ExpressAppLike): RouteEntry[] | null {
-  const router = app.router;
+  const router = getAppRouter(app);
   if (!router || !Array.isArray(router.stack) || router.stack.length === 0) {
     return [];
   }
@@ -42,7 +58,7 @@ export type ExpressErrorMiddleware = (
  * Used by fast() to wire setErrorHandler so next(err) in the Fastify lane reaches Express error handlers.
  */
 export function getExpressErrorMiddleware(app: ExpressAppLike): ExpressErrorMiddleware | null {
-  const router = app.router;
+  const router = getAppRouter(app);
   if (!router || !Array.isArray(router.stack)) return null;
   for (const layer of router.stack as Array<{ route?: unknown; handle: unknown }>) {
     if (layer.route) continue; // skip route layers; only use app-level middleware

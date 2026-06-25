@@ -1,10 +1,10 @@
 /**
- * Compile classified routes to Fastify (preHandler + routes).
+ * Compile classified routes to Fastify routes.
  * Maximize work at compile/registration time; at runtime we only adapt req/res and run
- * prebuilt handler chains. No runtime middleware resolution; reusable adapters; sync-first.
+ * prebuilt handler chains. No runtime middleware resolution; single handler per route; sync-first.
  */
 
-import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import type { FastifyInstance } from "fastify";
 import type { ClassifiedRoute } from "../types/internal";
 import type {
   ExpressRequest,
@@ -32,132 +32,99 @@ function pathMatches(middlewarePath: string, routePath: string): boolean {
   return r === m || r.startsWith(m + "/");
 }
 
+/** Shared no-op next() for the single-handler fast path (stateless: only rethrows errors). */
+const noopNext: NextFunction = (err?: Error | unknown) => {
+  if (err) throw err;
+};
+const noop = (): void => {};
+
+type Handler = (req: ExpressRequest, res: ExpressResponse, next: NextFunction) => void;
+
+/** Per-request hook the response adapter calls when it ends the response (see ResState._onEnd). */
+type ResWithEnd = ExpressResponse & { _onEnd?: (() => void) | null; req?: ExpressRequest };
+
 /**
- * Run middleware chain: sync-first loop, only await when handler returns thenable.
- * Uses nextCalled (not index comparison) so we correctly stop when a handler does not call next().
+ * Run an Express-style handler chain the way Express's router does: continuation-based, but
+ * sync-first so the common case stays allocation-light.
+ *
+ * `next()` is the ONLY driver — a handler advances whenever it calls next(): synchronously,
+ * from an awaited promise, OR from a detached callback / setTimeout / microtask (classic
+ * callback style). A handler that ends the response without next() stops the chain (res.json/
+ * send/end signal us via res._onEnd). Errors (sync throw, next(err), or async rejection) are
+ * routed to Fastify's error handler.
+ *
+ * Returns `undefined` when the chain settles synchronously (no Promise allocated — the fast
+ * path), or a Promise when a handler defers work (async/await or a detached next()). The only
+ * thing that "hangs" is a handler that never calls next() and never responds — as in Express.
  */
-async function runMiddlewareChain(
-  handlers: Array<
-    (req: ExpressRequest, res: ExpressResponse, next: NextFunction) => void
-  >,
-  req: ExpressRequest,
-  res: ExpressResponse,
-  _reply: FastifyReply,
-): Promise<void> {
+function run(handlers: Handler[], req: ExpressRequest, res: ExpressResponse): void | Promise<void> {
+  const r = res as ResWithEnd;
   let i = 0;
-  while (i < handlers.length) {
-    let nextCalled = false;
-    const next: NextFunction = (err?: Error | unknown) => {
-      if (err) throw err;
-      nextCalled = true;
-    };
-    const fn = handlers[i++];
-    const result = fn(req, res, next) as void | Promise<void>;
-    if (
-      result != null &&
-      typeof (result as Promise<unknown>).then === "function"
-    ) {
-      await (result as unknown as Promise<void>);
+  let finished = false;
+  let syncError: { e: unknown } | null = null; // captured sync error, rethrown after the drive
+  let deferred: { resolve: () => void; reject: (e: unknown) => void } | null = null;
+  // settle() is inlined into next()/_onEnd to keep per-request closures to a minimum (sync case
+  // allocates just _onEnd + next; the async rejection closure is only created if a handler defers).
+  const settle = (err?: unknown): void => {
+    if (finished) return;
+    finished = true;
+    r._onEnd = undefined;
+    if (err === undefined) {
+      if (deferred) deferred.resolve();
+    } else if (deferred) {
+      deferred.reject(err);
+    } else {
+      // next(err) is called from inside the handler that run()'s own try/catch wraps, so throwing
+      // here would be swallowed. Stash and rethrow once the synchronous drive unwinds.
+      syncError = { e: err };
     }
-    if (!nextCalled) return;
-  }
+  };
+  // If a handler ends the response without calling next(), stop waiting (settle() = success).
+  r._onEnd = settle as () => void;
+  const next: NextFunction = (err?: Error | unknown) => {
+    if (err !== undefined && err !== null) return settle(err);
+    if (i >= handlers.length) return settle();
+    const fn = handlers[i++];
+    let ret: unknown;
+    try {
+      ret = fn(req, res, next);
+    } catch (e) {
+      return settle(e);
+    }
+    if (ret != null && typeof (ret as Promise<unknown>).then === "function") {
+      (ret as Promise<unknown>).then(noop, (e) => settle(e));
+    }
+  };
+  next(); // drive synchronously
+  if (syncError) throw (syncError as { e: unknown }).e; // sync throw / next(err) → Fastify error handler
+  if (finished) return; // settled synchronously → no Promise (fast path)
+  return new Promise<void>((resolve, reject) => {
+    deferred = { resolve, reject };
+    if (finished) resolve();
+  });
 }
 
-/** Attach adapted req/res to Fastify request so handler reuses them (adapt once per request). */
-const kExpressReq = Symbol.for("express-fastify-runtime.req");
-const kExpressRes = Symbol.for("express-fastify-runtime.res");
-
-type RequestWithExpress = FastifyRequest & {
-  [kExpressReq]?: ExpressRequest;
-  [kExpressRes]?: ExpressResponse;
-};
-
-/**
- * Build preHandler: adapt once, run applicable middleware (that appear before this route in the stack), attach req/res for handler.
- * Only middleware with index < routeIndex in classified is run, so catch-all 404 handlers after the route do not run first.
- */
-function buildPreHandlersForPath(
+/** Path prefix match wrapper kept above; collect the applicable middleware for a route. */
+function collectApplicableMiddleware(
   routePath: string,
   classified: ClassifiedRoute[],
   routeIndex: number,
-  adaptRequest: RequestAdapter,
-  adaptResponse: ResponseAdapter,
-): (request: FastifyRequest, reply: FastifyReply) => Promise<void> {
-  const applicable: Array<
-    (req: ExpressRequest, res: ExpressResponse, next: NextFunction) => void
-  > = [];
+): Handler[] {
+  const applicable: Handler[] = [];
   for (let i = 0; i < classified.length && i < routeIndex; i++) {
     const c = classified[i];
     if (c.lane !== "fastify" || c.type !== "middleware") continue;
     const path = c.path === "/" ? "/" : normalizePath(c.path);
     if (!pathMatches(path, routePath)) continue;
     for (const h of c.handlers) {
-      const fn = isExpressJson(h as ExpressHandler)
-        ? (expressJsonPassthrough() as (
-            req: ExpressRequest,
-            res: ExpressResponse,
-            next: NextFunction,
-          ) => void)
-        : (h as (
-            req: ExpressRequest,
-            res: ExpressResponse,
-            next: NextFunction,
-          ) => void);
-      applicable.push(fn);
+      // 4-arg Express error middleware runs via setErrorHandler, never in the normal chain.
+      if (typeof h === "function" && (h as { length: number }).length === 4) continue;
+      applicable.push(
+        (isExpressJson(h as ExpressHandler) ? expressJsonPassthrough() : h) as Handler,
+      );
     }
   }
-  const hasMiddleware = applicable.length > 0;
-  return async (request: RequestWithExpress, reply: FastifyReply) => {
-    applyMaxListeners(request.raw, reply.raw);
-    const req = adaptRequest(request);
-    const res = adaptResponse(reply, request);
-    request[kExpressReq] = req;
-    request[kExpressRes] = res;
-    (res as ExpressResponse & { req?: ExpressRequest }).req = req;
-    if (hasMiddleware) await runMiddlewareChain(applicable, req, res, reply);
-  };
-}
-
-/**
- * Run route handlers (middleware + final handler). Sync-first; index-based next (no boolean).
- */
-async function runRouteHandlers(
-  handlers: Array<
-    (req: ExpressRequest, res: ExpressResponse, next: NextFunction) => void
-  >,
-  req: ExpressRequest,
-  res: ExpressResponse,
-  reply: FastifyReply,
-): Promise<void> {
-  let i = 0;
-  while (i < handlers.length) {
-    let nextCalled = false;
-    const next: NextFunction = (err?: Error | unknown) => {
-      if (err) throw err;
-      nextCalled = true;
-    };
-    const fn = handlers[i++] as (
-      req: ExpressRequest,
-      res: ExpressResponse,
-      next: NextFunction,
-    ) => void;
-    const result = fn(req, res, next) as void | Promise<void>;
-    if (
-      result != null &&
-      typeof (result as Promise<unknown>).then === "function"
-    ) {
-      await (result as unknown as Promise<void>);
-    }
-    if (!nextCalled) break;
-  }
-  // Do NOT await reply.raw.once('finish') here. With keep-alive (e.g. Postman),
-  // Node emits 'finish' only when the response is flushed to the OS. If we keep
-  // the handler open waiting for 'finish', the request stays "in flight" and the
-  // socket may not flush until the client disconnects — so morgan and res.on('finish')
-  // would only run on disconnect. Express returns immediately after res.send(), so
-  // the connection can flush and 'finish' fires in a timely way. We match that:
-  // return as soon as route handlers have run; morgan/on-finished still run when
-  // the raw response actually finishes (or on socket 'close').
+  return applicable;
 }
 
 export interface RegisterFastifyRoutesOptions {
@@ -166,7 +133,12 @@ export interface RegisterFastifyRoutesOptions {
 
 /**
  * Register compiled Fastify routes (safe route entries only).
- * Adapt once in preHandler; handler reuses req/res from request.
+ *
+ * One Fastify handler per route (no separate preHandler stage). The full chain
+ * [applicable global middleware..., route handlers...] is precomputed at registration:
+ * - chain length 1 → call it directly (sync return, no Promise/chain) — the hot path.
+ * - chain length >1 → drive it with the continuation runner (correct for every middleware
+ *   style, incl. callback-style next()).
  */
 export function registerFastifyRoutes(
   fastify: FastifyInstance,
@@ -178,100 +150,78 @@ export function registerFastifyRoutes(
 ): void {
   const diagnostics = options?.diagnostics === true;
 
+  const ALL_METHODS = [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "HEAD",
+    "OPTIONS",
+  ] as const;
+  const expandMethods = (method: string): readonly string[] =>
+    method === "all" ? ALL_METHODS : [method.toUpperCase()];
+
+  // Count route entries per concrete method+path across ALL lanes. Express allows the same
+  // method+path to be declared more than once (the layers chain via next()); Fastify forbids
+  // duplicate method+path. Any method+path declared >1 time is left OFF the Fastify lane and
+  // handled by the real embedded Express app (which has every layer and runs them in order).
+  const methodPathCount = new Map<string, number>();
+  for (const c of classified) {
+    if (c.type !== "route") continue;
+    const p = normalizePath(c.path);
+    for (const m of expandMethods(c.method)) {
+      const key = m + " " + p;
+      methodPathCount.set(key, (methodPathCount.get(key) ?? 0) + 1);
+    }
+  }
+
   const routeEntries = classified.filter(
     (c) => c.type === "route" && c.lane === "fastify",
   );
   for (const entry of routeEntries) {
     if (entry.type !== "route") continue;
     const path = normalizePath(entry.path);
+    // baseUrl is constant per route — compute once at registration, not per request.
+    const baseUrlSegments = path.split("/").filter(Boolean);
+    const baseUrl = baseUrlSegments.length >= 1 ? "/" + baseUrlSegments[0] : "";
     const routeIndex = classified.indexOf(entry);
-    const methods =
-      entry.method === "all"
-        ? ([
-            "GET",
-            "POST",
-            "PUT",
-            "PATCH",
-            "DELETE",
-            "HEAD",
-            "OPTIONS",
-          ] as const)
-        : [entry.method.toUpperCase()];
-    const preHandler = buildPreHandlersForPath(
-      path,
-      classified,
-      routeIndex,
-      adaptRequest,
-      adaptResponse,
+    // Only register methods that are declared exactly once for this path; duplicates (incl.
+    // all+method overlaps, or a same-path entry on the Express lane) defer to the Express lane.
+    const methods = expandMethods(entry.method).filter(
+      (m) => (methodPathCount.get(m + " " + path) ?? 0) === 1,
     );
-    const handlers = (entry.handlers as ExpressHandler[]).map((h) =>
+    if (methods.length === 0) continue;
+    const applicable = collectApplicableMiddleware(path, classified, routeIndex);
+    const routeHandlers = (entry.handlers as ExpressHandler[]).map((h) =>
       isExpressJson(h) ? expressJsonPassthrough() : h,
-    ) as Array<
-      (req: ExpressRequest, res: ExpressResponse, next: NextFunction) => void
-    >;
+    ) as Handler[];
+    const chain = applicable.length ? applicable.concat(routeHandlers) : routeHandlers;
+    // Hot path: exactly one handler that doesn't take `next` (arity ≤ 2) can only respond
+    // synchronously or return a promise — call it directly, no runner/closures/Promise.
+    // Anything that takes `next` (or a multi-handler chain) goes through the continuation runner.
+    const fastSingle = chain.length === 1 && (chain[0] as { length: number }).length <= 2 ? chain[0] : null;
 
     for (const m of methods) {
-      const diagnosticsPreHandler =
-        diagnostics
-          ? async (request: FastifyRequest) => {
-              const url = request.url ?? path;
-              console.log(`[express-fastify-runtime] Fastify lane: ${m} ${url}`);
-            }
-          : undefined;
-
-      const preHandlers =
-        diagnosticsPreHandler != null
-          ? [diagnosticsPreHandler, preHandler]
-          : [preHandler];
+      const logLane = diagnostics
+        ? (request: import("fastify").FastifyRequest) =>
+            console.log(`[express-fastify-runtime] Fastify lane: ${m} ${request.url ?? path}`)
+        : null;
 
       fastify.route({
         method: m,
         url: path,
-        preHandler: preHandlers,
-        handler: async (request, reply) => {
-          const req = (request as RequestWithExpress)[kExpressReq]!;
-          const res = (request as RequestWithExpress)[kExpressRes]!;
-          // Morgan's :response-time needs res._startAt. Morgan sets it via onHeaders(res, recordStartTime)
-          const raw = reply.raw as import("node:http").ServerResponse & {
-            _efrWriteHeadPatched?: boolean;
-          };
-          if (!raw._efrWriteHeadPatched) {
-            raw._efrWriteHeadPatched = true;
-            const origWriteHead = raw.writeHead.bind(raw);
-            raw.writeHead = function (this: import("node:http").ServerResponse, ...args: unknown[]) {
-              const resAny = res as ExpressResponse & { _startAt?: [number, number]; _startTime?: Date };
-              if (resAny._startAt === undefined) {
-                resAny._startAt = process.hrtime();
-                resAny._startTime = new Date();
-              }
-              return (origWriteHead as (...a: unknown[]) => ReturnType<typeof origWriteHead>).apply(this, args);
-            };
+        handler: (request, reply) => {
+          if (logLane) logLane(request);
+          applyMaxListeners(request.raw, reply.raw);
+          const req = adaptRequest(request);
+          const res = adaptResponse(reply, request);
+          (res as ResWithEnd).req = req;
+          req.baseUrl = baseUrl;
+          if (fastSingle !== null) {
+            return fastSingle(req, res, noopNext) as void | Promise<unknown>;
           }
-          const segments = path.split("/").filter(Boolean);
-          req.baseUrl = segments.length >= 1 ? "/" + segments[0] : "";
-          // Fast path: single handler — no loop, no next() (per PLAN_FASTIFY_CLOSER.md Tier 1.1).
-          if (handlers.length === 1) {
-            const fn = handlers[0];
-            const result = fn(req, res, (err?: Error | unknown) => {
-              if (err) throw err;
-            }) as void | Promise<void>;
-            if (result != null && typeof (result as Promise<unknown>).then === "function") {
-              await (result as unknown as Promise<void>);
-            }
-          } else {
-            await runRouteHandlers(
-              handlers as Array<
-                (
-                  req: ExpressRequest,
-                  res: ExpressResponse,
-                  next: NextFunction,
-                ) => void
-              >,
-              req,
-              res,
-              reply,
-            );
-          }
+          return run(chain, req, res);
         },
       });
     }

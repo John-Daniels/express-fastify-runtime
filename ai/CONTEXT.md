@@ -115,10 +115,26 @@ ai/            # this folder — CONTEXT.md
 
 ## 8. Optimization principles (why it's fast)
 
-1. **Zero alloc hot path** — Reusable req/res (createRequestAdapter, createResponseAdapter); mutate per request, no new objects/closures.
-2. **Adapt once per request** — preHandler adapts and attaches req/res to request (kExpressReq, kExpressRes); handler reuses them.
-3. **Sync-first handler loop** — while loop, index-based next; await only when handler returns thenable.
-4. **One Promise when waiting** — Only one `new Promise` + `reply.raw.once('finish')` when response not yet sent.
+> ⚠️ **CORRECTNESS FIRST — do NOT reuse a single shared req/res across requests.** An earlier
+> "zero-alloc reusable adapter" shared one req and one res object app-wide and corrupted
+> concurrent **async** handlers (29/30 concurrent async requests returned empty/scrambled
+> bodies; morgan logged garbage). Each request MUST get its own req/res state. We keep it
+> cheap via a **shared method prototype + a small per-request instance** (Object.create),
+> NOT by sharing a singleton. Always validate perf changes with concurrent async handlers
+> (see test/integration/concurrency.test.js).
+
+1. **Per-request isolation, prototype-shared methods** — `createRequestAdapter` /
+   `createResponseAdapter` define methods/getters once on a prototype; each request gets a
+   small instance holding only `_raw`/`_reply`/url/query/params/body/locals. Derived values
+   (protocol, ip, cookies, ...) are lazy getters.
+2. **Single Fastify handler per route where safe** — routes with no global middleware fold
+   adapt+run into one handler (no preHandler stage); routes with middleware keep
+   preHandler+handler so Fastify's skip-on-reply-sent and async-next() semantics hold.
+3. **Sync-first handler loop** — while loop, one `next()` per chain; await only when a handler
+   returns a thenable. Handler returns the user handler's promise directly (no extra async frame).
+4. **Finish/morgan via the real response** — finish/end/close are delegated to `reply.raw`;
+   `res._startAt` is recorded in `res.json/send`. No synthetic setImmediate finish (it raced
+   under concurrency and broke morgan).
 5. **Same API, minimal shape** — Small req/res surface; no full Express prototype chain.
 
 ---

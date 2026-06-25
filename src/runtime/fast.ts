@@ -52,18 +52,50 @@ export interface FastOps {
   experimental?: FastOpsExperimental;
 }
 
+/**
+ * The Express application accepted by fast().
+ *
+ * Typed structurally (a request-handler function that also exposes Express's methods) rather than
+ * importing `Application` from `@types/express`. This decouples fast()'s public signature from any
+ * specific Express / @types/express version, so `fast(express())` type-checks whether the host
+ * project is on Express 4 or 5 — avoiding the "'Express' is not assignable to 'Application'" error
+ * that appears when the host's @types/express differs from the one this package was built with.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ExpressApp = ((...args: any[]) => any) & {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  use: (...args: any[]) => any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+};
+
 const DEFAULT_OPTS: FastifyServerOptions = {
   logger: false,
   bodyLimit: 10 * 1024 * 1024, // 10MB; matches express.json({ limit: '10mb' })
 };
 
+/**
+ * Coerce a port to a number like Node/Express do. `process.env.PORT` is a STRING, so
+ * server.listen(process.env.PORT) passes "2015"; without coercion we'd fall back to 0 (a random
+ * port) and the server would be "running" but unreachable on the intended port. Invalid/empty
+ * values fall back to 0 (OS-assigned), matching server.listen() with no port.
+ */
+function toPort(port?: number | string): number {
+  if (typeof port === "number" && Number.isFinite(port)) return port;
+  if (typeof port === "string" && port.trim() !== "") {
+    const n = Number(port);
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
+
 function listenArgsToOptions(
-  port?: number,
+  port?: number | string,
   hostOrBacklogOrCb?: string | number | (() => void),
   cb?: () => void,
 ): ListenOptionsResult {
   const options: ListenOptionsResult = {
-    port: typeof port === "number" ? port : 0,
+    port: toPort(port),
   };
   if (typeof hostOrBacklogOrCb === "string") options.host = hostOrBacklogOrCb;
   else if (typeof hostOrBacklogOrCb === "function")
@@ -84,7 +116,7 @@ function listenArgsToOptions(
  * When using Fastify plugins, await fastApp.ready() before listen so plugins are loaded.
  */
 export function fast(
-  app: Application,
+  app: ExpressApp,
   ops?: FastOps | FastifyServerOptions,
 ): FastifyInstance {
   const fastifyOpts =
@@ -111,7 +143,7 @@ export function fast(
     );
   }
 
-  mountExpress(fastify, app, { diagnostics });
+  mountExpress(fastify, app as unknown as Application, { diagnostics });
 
   const expressErrorMiddleware = getExpressErrorMiddleware(
     app as unknown as ExpressAppLike,
@@ -136,7 +168,7 @@ export function fast(
 
   function wrappedListen(
     this: Server,
-    port?: number | ListenOptions,
+    port?: number | string | ListenOptions,
     hostOrBacklogOrCb?: string | number | (() => void),
     cb?: () => void,
   ): Server {
@@ -160,16 +192,17 @@ export function fast(
     };
     let userCb: ListenCallback | undefined;
     if (typeof port === "object" && port !== null && "port" in port) {
-      const opts = port as { port?: number; host?: string };
+      const opts = port as { port?: number | string; host?: string };
       userCb =
         typeof hostOrBacklogOrCb === "function"
           ? (hostOrBacklogOrCb as ListenCallback)
           : undefined;
       listenReentry = true;
       const host = opts.host ?? "0.0.0.0";
+      const p = toPort(opts.port);
       try {
-        if (userCb) fastify.listen({ port: opts.port ?? 0, host }, fastifyCb);
-        else fastify.listen({ port: opts.port ?? 0, host });
+        if (userCb) fastify.listen({ port: p, host }, fastifyCb);
+        else fastify.listen({ port: p, host });
       } catch (e) {
         listenReentry = false;
         throw e;
@@ -177,7 +210,7 @@ export function fast(
       return this;
     }
     const options = listenArgsToOptions(
-      typeof port === "number" ? port : 0,
+      port as number | string | undefined,
       hostOrBacklogOrCb,
       cb,
     );

@@ -141,7 +141,7 @@ describe("fast(expressApp)", () => {
     await fastify.close();
   });
 
-  it.skip("Express 4-arg error middleware receives errors from Fastify lane (next(err))", async () => {
+  it("Express 4-arg error middleware receives errors from Fastify lane (next(err))", async () => {
     const app = express();
     app.get("/fail", (req, res, next) => next(new Error("expected error")));
     app.use((err, req, res, next) => {

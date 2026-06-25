@@ -55,18 +55,23 @@ function patchLayerModule(layerModulePath: string): void {
 
 const patchedPaths = new Set<string>();
 
-function tryPatchFrom(basePath: string): void {
+function tryPatchModule(specifier: string, basePath: string): void {
   try {
-    const layerModulePath = requireFromPkg.resolve("router/lib/layer", {
-      paths: [basePath],
-    });
+    const layerModulePath = requireFromPkg.resolve(specifier, { paths: [basePath] });
     if (patchedPaths.has(layerModulePath)) return;
     patchedPaths.add(layerModulePath);
     requireFromPkg(layerModulePath);
     patchLayerModule(layerModulePath);
   } catch {
-    // router not available from this path
+    // module not available from this path
   }
+}
+
+function tryPatchFrom(basePath: string): void {
+  // Express 5 uses the standalone `router` package; Express 4 bundles its Layer inside express.
+  // Both have a Layer(path, options, fn) constructor, so the same patch records _path on each.
+  tryPatchModule("router/lib/layer", basePath);
+  tryPatchModule("express/lib/router/layer", basePath);
 }
 
 try {

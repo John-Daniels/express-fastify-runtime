@@ -123,116 +123,147 @@ export function adaptRequest(fastifyReq: FastifyRequest): ExpressRequest {
   return req;
 }
 
-/** Creates a reusable request adapter: one req object, mutated per request (zero alloc). */
-export function createRequestAdapter(): (fastifyReq: FastifyRequest) => ExpressRequest {
-  const req = {
-    _raw: null as import('node:http').IncomingMessage | null,
-    _query: {} as Record<string, string | string[]>,
-    _params: {} as Record<string, string>,
-    _body: undefined as unknown,
-    url: '',
-    baseUrl: '',
-    originalUrl: '',
-    get(name: string) {
-      return getHeader(this._raw?.headers ?? {}, name);
-    },
-    header(name: string) {
-      return getHeader(this._raw?.headers ?? {}, name);
-    },
-    get method() {
-      return this._raw?.method;
-    },
-    get headers() {
-      return this._raw?.headers ?? {};
-    },
-    get path() {
-      return (this.url || '/').split('?')[0] || '/';
-    },
-    get protocol() {
-      return this._raw ? getProtocol(this._raw) : 'http';
-    },
-    get secure() {
-      return this.protocol === 'https';
-    },
-    get ip() {
-      return this._raw ? getIp(this._raw) : '';
-    },
-    get ips() {
-      return this._raw ? getIps(this._raw) : [];
-    },
-    get hostname() {
-      return this._raw ? getHostname(this._raw) : '';
-    },
-    get host() {
-      return (this._raw?.headers?.host as string) ?? '';
-    },
-    get xhr() {
-      return (
-        (this._raw?.headers?.['x-requested-with'] as string)?.toLowerCase() ===
-        'xmlhttprequest'
-      );
-    },
-    get fresh() {
-      return false;
-    },
-    get stale() {
-      return true;
-    },
-    get cookies() {
-      return this._raw
-        ? parseCookieHeader(this._raw.headers.cookie as string)
-        : {};
-    },
-    get signedCookies() {
-      return {};
-    },
-    accepts(...types: string[]) {
-      const acc = accepts(this as ExpressRequest);
-      return (acc.types as (...t: string[]) => string | false | string[]).apply(acc, types);
-    },
-    acceptsEncodings(...encodings: string[]) {
-      const acc = accepts(this as ExpressRequest);
-      return (acc.encodings as (...e: string[]) => string | false | string[]).apply(acc, encodings);
-    },
-    acceptsCharsets(...charsets: string[]) {
-      const acc = accepts(this as ExpressRequest);
-      return (acc.charsets as (...c: string[]) => string | false | string[]).apply(acc, charsets);
-    },
-    acceptsLanguages(...langs: string[]) {
-      const acc = accepts(this as ExpressRequest);
-      return (acc.languages as (...l: string[]) => string | false | string[]).apply(acc, langs);
-    },
-    range(size: number, options?: { combine?: boolean }): unknown {
-      const r = this.get('Range');
-      if (!r) return undefined;
-      return parseRange(size, r, options);
-    },
-    is(types: string | string[]): string | false {
-      const arr = Array.isArray(types) ? types : ([] as string[]).slice.call(arguments);
-      return typeis(this as ExpressRequest, arr) as string | false;
-    },
-  } as ExpressRequest & {
-    _raw: import('node:http').IncomingMessage | null;
-    _query: Record<string, string | string[]>;
-    _params: Record<string, string>;
-    _body: unknown;
-  };
+type RawReq = import('node:http').IncomingMessage;
+interface ReqState {
+  _raw: RawReq | null;
+}
 
+/**
+ * Shared request prototype: methods/getters defined ONCE. Per-request state (_raw, url,
+ * query, params, body) lives on each instance. Derived values (protocol, ip, cookies,
+ * hostname, ...) are LAZY getters so we never compute them for requests that don't read
+ * them. Common native IncomingMessage fields are delegated to this._raw for compatibility.
+ */
+const requestProto = {
+  get(name: string) {
+    return getHeader((this as unknown as ReqState)._raw?.headers ?? {}, name);
+  },
+  header(name: string) {
+    return getHeader((this as unknown as ReqState)._raw?.headers ?? {}, name);
+  },
+  get method() {
+    return (this as unknown as ReqState)._raw?.method;
+  },
+  get headers() {
+    return (this as unknown as ReqState)._raw?.headers ?? {};
+  },
+  get rawHeaders() {
+    return (this as unknown as ReqState)._raw?.rawHeaders;
+  },
+  get httpVersion() {
+    return (this as unknown as ReqState)._raw?.httpVersion;
+  },
+  get socket() {
+    return (this as unknown as ReqState)._raw?.socket;
+  },
+  get connection() {
+    return (this as unknown as ReqState)._raw?.socket;
+  },
+  get complete() {
+    return (this as unknown as ReqState)._raw?.complete;
+  },
+  get aborted() {
+    return (this as unknown as ReqState)._raw?.aborted ?? false;
+  },
+  get path() {
+    return ((this as { url?: string }).url || '/').split('?')[0] || '/';
+  },
+  get protocol() {
+    const raw = (this as unknown as ReqState)._raw;
+    return raw ? getProtocol(raw) : 'http';
+  },
+  get secure() {
+    return (this as unknown as ExpressRequest).protocol === 'https';
+  },
+  get ip() {
+    const raw = (this as unknown as ReqState)._raw;
+    return raw ? getIp(raw) : '';
+  },
+  get ips() {
+    const raw = (this as unknown as ReqState)._raw;
+    return raw ? getIps(raw) : [];
+  },
+  get hostname() {
+    const raw = (this as unknown as ReqState)._raw;
+    return raw ? getHostname(raw) : '';
+  },
+  get host() {
+    return ((this as unknown as ReqState)._raw?.headers?.host as string) ?? '';
+  },
+  get xhr() {
+    return (
+      ((this as unknown as ReqState)._raw?.headers?.['x-requested-with'] as string)?.toLowerCase() ===
+      'xmlhttprequest'
+    );
+  },
+  get fresh() {
+    return false;
+  },
+  get stale() {
+    return true;
+  },
+  get cookies() {
+    const raw = (this as unknown as ReqState)._raw;
+    return raw ? parseCookieHeader(raw.headers.cookie as string) : {};
+  },
+  get signedCookies() {
+    return {};
+  },
+  accepts(...types: string[]) {
+    const acc = accepts(this as unknown as ExpressRequest);
+    return (acc.types as (...t: string[]) => string | false | string[]).apply(acc, types);
+  },
+  acceptsEncodings(...encodings: string[]) {
+    const acc = accepts(this as unknown as ExpressRequest);
+    return (acc.encodings as (...e: string[]) => string | false | string[]).apply(acc, encodings);
+  },
+  acceptsCharsets(...charsets: string[]) {
+    const acc = accepts(this as unknown as ExpressRequest);
+    return (acc.charsets as (...c: string[]) => string | false | string[]).apply(acc, charsets);
+  },
+  acceptsLanguages(...langs: string[]) {
+    const acc = accepts(this as unknown as ExpressRequest);
+    return (acc.languages as (...l: string[]) => string | false | string[]).apply(acc, langs);
+  },
+  range(size: number, options?: { combine?: boolean }): unknown {
+    const r = (this as unknown as ExpressRequest).get('Range');
+    if (!r) return undefined;
+    return parseRange(size, r, options);
+  },
+  is(types: string | string[]): string | false {
+    const arr = Array.isArray(types) ? types : ([] as string[]).slice.call(arguments);
+    return typeis(this as unknown as ExpressRequest, arr) as string | false;
+  },
+};
+
+/**
+ * Returns a request adapter that builds a FRESH Express-like req per request (methods
+ * shared via prototype, state per instance).
+ *
+ * CRITICAL: a new instance is created per request. A single shared/mutated req object
+ * corrupts concurrent async requests (a later request would overwrite an earlier one
+ * still in flight).
+ */
+export function createRequestAdapter(): (fastifyReq: FastifyRequest) => ExpressRequest {
   return (fastifyReq: FastifyRequest): ExpressRequest => {
+    const req = Object.create(requestProto) as ReqState & {
+      url: string;
+      originalUrl: string;
+      baseUrl: string;
+      query: unknown;
+      params: unknown;
+      body: unknown;
+    };
     req._raw = fastifyReq.raw;
     const rawUrl = fastifyReq.raw?.url ?? '/';
     req.url = rawUrl;
     req.originalUrl = rawUrl;
     req.baseUrl = '';
-    req._query =
-      (fastifyReq as FastifyRequest & { query?: Record<string, string | string[]> })
-        .query ?? {};
-    req._params =
+    req.query =
+      (fastifyReq as FastifyRequest & { query?: Record<string, string | string[]> }).query ?? {};
+    req.params =
       (fastifyReq as FastifyRequest & { params?: Record<string, string> }).params ?? {};
-    req._body = (fastifyReq as FastifyRequest & { body?: unknown }).body;
-    req.query = req._query;
-    req.params = req._params;
-    req.body = req._body;
-    return req as ExpressRequest;
+    req.body = (fastifyReq as FastifyRequest & { body?: unknown }).body;
+    return req as unknown as ExpressRequest;
   };
 }

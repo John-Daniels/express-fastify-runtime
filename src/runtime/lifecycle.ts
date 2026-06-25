@@ -11,6 +11,9 @@ import { mountExpress } from '../express/mount';
 import { registerCompiledRoutes } from '../fastify/register';
 import { populateExpressApp } from './populateExpress';
 import { assertNotLocked } from '../utils/assert';
+import { findErrorMiddleware, wrapErrorHandler } from './errorHandler';
+import { createRequestAdapter } from '../fastify/adapters/request';
+import { adaptResponse } from '../fastify/adapters/response';
 import { RouteStore } from '../app/RouteStore';
 import { isExpressRouter, flattenRouter } from '../app/flattenRouter';
 import { normalizePath } from '../utils/path';
@@ -145,6 +148,17 @@ export function createApp(options?: CreateAppOptions): ExpressLikeApp {
         next: import('../types/express').NextFunction
       ) => next();
       registerCompiledRoutes(fastify, classified, runMiddleware);
+
+      // Wire Express 4-arg error middleware → Fastify error handler so next(err)/throw on the
+      // Fastify lane reaches it (parity with fast()). The error mw is excluded from the normal
+      // middleware chain (see compile.ts), so it only runs here.
+      const errorMiddleware = findErrorMiddleware(routeStore.getAll());
+      if (errorMiddleware) {
+        fastify.setErrorHandler(
+          wrapErrorHandler(errorMiddleware, createRequestAdapter(), adaptResponse)
+        );
+      }
+
       mountExpress(fastify, express);
 
       const listenOpts = { port: p ?? 0, host: h ?? '0.0.0.0' };

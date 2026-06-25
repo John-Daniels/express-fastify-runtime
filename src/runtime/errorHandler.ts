@@ -4,6 +4,25 @@
 
 import type { FastifyError, FastifyRequest, FastifyReply } from 'fastify';
 import type { ExpressRequest, ExpressResponse, ExpressErrorMiddleware } from '../types/express';
+import type { RouteEntry } from '../types/internal';
+
+/**
+ * Find the first Express 4-arg error middleware among route-store entries (for createApp()).
+ * Mirrors getExpressErrorMiddleware() which does the same for an introspected Express app.
+ */
+export function findErrorMiddleware(
+  entries: readonly RouteEntry[]
+): ExpressErrorMiddleware | null {
+  for (const e of entries) {
+    if (e.type !== 'middleware') continue;
+    for (const h of e.handlers) {
+      if (typeof h === 'function' && (h as { length: number }).length === 4) {
+        return h as unknown as ExpressErrorMiddleware;
+      }
+    }
+  }
+  return null;
+}
 
 /** Build Express-like res for the error handler (status, send, json, set, setHeader, locals, headersSent). */
 function errorHandlerRes(reply: FastifyReply): ExpressResponse {

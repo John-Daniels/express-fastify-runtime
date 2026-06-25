@@ -46,88 +46,78 @@ function waitForPort(port, timeoutMs = 8000) {
   });
 }
 
-async function runAutocannon(port) {
-  const autocannon = await import("autocannon").catch(() => null);
-  if (!autocannon) {
-    throw new Error("autocannon not installed (npm i -D autocannon)");
-  }
-  const result = await autocannon.default({
-    url: `http://127.0.0.1:${port}/`,
-    duration: Number(DURATION),
-    connections: 10,
-    pipelining: 1,
-  });
-  return {
-    reqPerSec: result.requests?.average ?? 0,
-    latencyMean: result.latency?.mean ?? 0,
-  };
+const ROUNDS = Number(process.env.ROUNDS || 5);
+const WARMUP = Number(process.env.WARMUP || 2);
+
+function median(nums) {
+  const s = [...nums].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
-async function runServer(name, file, port) {
-  const child = spawn(process.execPath, [file], {
+function startServer(file, port) {
+  return spawn(process.execPath, [file], {
     stdio: "ignore",
     env: { ...process.env, PORT: String(port), MW, BENCH_AUTO_CLOSE: "1" },
     cwd: rootDir,
   });
-  try {
-    await waitForPort(port);
-    const result = await runAutocannon(port);
-    return result;
-  } finally {
-    child.kill("SIGTERM");
-    await new Promise((r) => setTimeout(r, 300));
-  }
+}
+
+async function sample(port, durationSec) {
+  const autocannon = await import("autocannon").catch(() => null);
+  if (!autocannon) throw new Error("autocannon not installed (npm i -D autocannon)");
+  const result = await autocannon.default({
+    url: `http://127.0.0.1:${port}/`,
+    duration: durationSec,
+    connections: 10,
+    pipelining: 1,
+  });
+  return result.requests?.average ?? 0;
 }
 
 async function main() {
-  console.log("fast() vs Fastify — same workload (MW=%s, duration=%ss)\n", MW, DURATION);
+  console.log(
+    "fast() vs Fastify — same workload (MW=%s, sample=%ss, warmup=%ss, rounds=%s, interleaved median)\n",
+    MW,
+    DURATION,
+    WARMUP,
+    ROUNDS,
+  );
 
-  let fastifyResult;
-  let fastResult;
-
-  try {
-    process.stdout.write("Fastify (plain): ");
-    fastifyResult = await runServer("fastify", join(serverDir, "fastify.js"), fastifyPort);
-    console.log(
-      "req/s: %s | latency mean: %s ms",
-      fastifyResult.reqPerSec.toFixed(0),
-      fastifyResult.latencyMean.toFixed(2)
-    );
-  } catch (err) {
-    console.log("error:", err.message);
-    process.exit(1);
-  }
+  const fastifyChild = startServer(join(serverDir, "fastify.js"), fastifyPort);
+  const fastChild = startServer(join(serverDir, "express-fastify-runtime-fast.js"), fastPort);
 
   try {
-    process.stdout.write("fast(express):    ");
-    fastResult = await runServer(
-      "fast",
-      join(serverDir, "express-fastify-runtime-fast.js"),
-      fastPort
-    );
-    console.log(
-      "req/s: %s | latency mean: %s ms",
-      fastResult.reqPerSec.toFixed(0),
-      fastResult.latencyMean.toFixed(2)
-    );
-  } catch (err) {
-    console.log("error:", err.message);
-    process.exit(1);
+    await Promise.all([waitForPort(fastifyPort), waitForPort(fastPort)]);
+
+    // Warmup both (discarded) so JIT/GC settle before measuring.
+    await sample(fastifyPort, WARMUP);
+    await sample(fastPort, WARMUP);
+
+    const fastifySamples = [];
+    const fastSamples = [];
+    for (let r = 0; r < ROUNDS; r++) {
+      // Interleave so thermal/scheduler drift hits both runs equally.
+      fastifySamples.push(await sample(fastifyPort, Number(DURATION)));
+      fastSamples.push(await sample(fastPort, Number(DURATION)));
+    }
+
+    const fastifyMed = median(fastifySamples);
+    const fastMed = median(fastSamples);
+    const fmt = (a) => a.map((n) => n.toFixed(0)).join(", ");
+    console.log("Fastify (plain) req/s: median %s  [%s]", fastifyMed.toFixed(0), fmt(fastifySamples));
+    console.log("fast(express)   req/s: median %s  [%s]", fastMed.toFixed(0), fmt(fastSamples));
+
+    const ratio = fastifyMed > 0 ? (fastMed / fastifyMed).toFixed(3) : "—";
+    const overhead = fastifyMed > 0 ? ((1 - fastMed / fastifyMed) * 100).toFixed(1) : "—";
+    console.log("\n---");
+    console.log("fast(express) / Fastify ratio: %s (1.0 = same speed)", ratio);
+    console.log("Overhead (how much slower fast() is): %s%%", overhead);
+  } finally {
+    fastifyChild.kill("SIGTERM");
+    fastChild.kill("SIGTERM");
+    await new Promise((r) => setTimeout(r, 300));
   }
-
-  const overhead =
-    fastifyResult.reqPerSec > 0
-      ? ((1 - fastResult.reqPerSec / fastifyResult.reqPerSec) * 100).toFixed(1)
-      : "—";
-  const ratio =
-    fastifyResult.reqPerSec > 0
-      ? (fastResult.reqPerSec / fastifyResult.reqPerSec).toFixed(3)
-      : "—";
-
-  console.log("\n---");
-  console.log("fast(express) / Fastify ratio: %s (1.0 = same speed)", ratio);
-  console.log("Overhead (how much slower fast() is): %s%%", overhead);
-  console.log("\nSee benchmarks/fast-vs-fastify/README.md for why there is a gap.");
 }
 
 main().catch((err) => {

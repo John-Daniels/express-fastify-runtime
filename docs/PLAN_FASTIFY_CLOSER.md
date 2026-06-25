@@ -1,8 +1,40 @@
 # Plan: Get fast() Closer to Fastify Speed
 
+## Status update (2026-06-25)
+
+**Correctness first (release blocker fixed).** The previous "zero-alloc reusable adapter"
+shared ONE req and ONE res object for the whole app. That only works for synchronous
+handlers; under concurrent **async** handlers (and morgan's deferred finish listener) later
+requests overwrote earlier ones — 29/30 concurrent async requests returned empty/scrambled
+bodies, and morgan logged "- - ms - -". Fixed by **per-request isolation**: shared method
+prototype + a small per-request instance (`src/fastify/adapters/{request,response}.ts`).
+Morgan now works because finish/end/close events are **delegated to the real `reply.raw`**
+response (fires on actual finish, with status/headers/`_startAt` set) instead of a synthetic
+`setImmediate` emit that raced under load. Regression tests:
+`test/integration/concurrency.test.js`, `middleware-parity.test.js`.
+
+**Hot-path opts applied** (`src/app/compile.ts`): one `next()` per chain (not per handler),
+`baseUrl` precomputed at registration, `res.locals` lazy, removed the per-request
+`writeHead` morgan patch (record `res._startAt` in `res.json/send` instead), folded
+zero-middleware routes into a single Fastify handler (no preHandler stage), and removed the
+extra async handler frame (return the handler's promise directly).
+
+**Measured baseline** (`benchmarks/fast-vs-fastify`, now warmup + interleaved median): fast()
+is a stable ~51k req/s; Fastify ~68–72k → **ratio ≈ 0.72** at both MW=0 and MW=5. A CPU
+profile shows ~84% of time in Node's C++ HTTP layer and our own JS <1% — the gap is the
+per-request allocation of Express-shaped req/res over Fastify's pipeline, not our logic.
+
+**Path to parity (next, larger refactor):** decorate Fastify's own `request`/`reply`
+(`decorateRequest`/`decorateReply`, methods on the shared prototype) so we add NO per-request
+objects — Fastify already allocates request/reply per request. This is the highest-value
+remaining change and keeps per-request isolation by construction. Deferred as a separate
+focused effort because correctness shipped first and it touches the whole adapter path.
+
+---
+
 Goal: reduce the gap measured by `npm run benchmark:fast-vs-fastify` so that fast() (Fastify lane) is as close as possible to plain Fastify for the same workload, without breaking Express API compatibility.
 
-**Current gap (typical):** ~10–15% with MW=5, ~40–45% with MW=0 (pure route). See `benchmarks/fast-vs-fastify/README.md` and `docs/OPTIMIZATION.md` §5.
+**Current gap (measured, warmup+median):** ~0.72 ratio (≈28% overhead) at both MW=0 and MW=5 after the per-request isolation fix. (Earlier "~10–15% / ~40–45%" figures predate that fix and reflected the unsafe shared-adapter shortcut.) See `benchmarks/fast-vs-fastify/README.md`.
 
 ---
 

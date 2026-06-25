@@ -1,5 +1,10 @@
 # express-fastify-runtime
 
+[![npm version](https://img.shields.io/npm/v/express-fastify-runtime.svg)](https://www.npmjs.com/package/express-fastify-runtime)
+[![license](https://img.shields.io/npm/l/express-fastify-runtime.svg)](./LICENSE)
+
+<!-- [![npm downloads](https://img.shields.io/npm/dm/express-fastify-runtime.svg)](https://www.npmjs.com/package/express-fastify-runtime) -->
+
 > Your Express app. Fastify's speed. One line. No rewrite.
 
 ```ts
@@ -9,7 +14,7 @@ import express from "express";
 const app = express();
 app.get("/", (req, res) => res.json({ hello: "world" }));
 
-fast(app).listen({ port: 3000 });   // 👈 that's the whole trick
+fast(app).listen({ port: 3000 }); // 👈 that's the whole trick
 ```
 
 ---
@@ -17,18 +22,18 @@ fast(app).listen({ port: 3000 });   // 👈 that's the whole trick
 ## A short, slightly emotional story
 
 I love Express. I love it the way you love a comfortable pair of shoes — `req`, `res`,
-`next`, a thousand middlewares on npm, and muscle memory built over years. Express is *home*.
+`next`, a thousand middlewares on npm, and muscle memory built over years. Express is _home_.
 
 Then one day someone showed me a Fastify benchmark and my coffee went cold. "Two-ish times the
 throughput," they said, smiling like they'd discovered fire. And I thought: do I really have to
 abandon my comfortable shoes and rewrite everything in a new framework just to go faster?
 
 So I went looking for a shortcut. I found tools that "run Express on Fastify" — and many of them
-do *exactly* one thing: they hand your Express app to Fastify and let Fastify… call Express for
+do _exactly_ one thing: they hand your Express app to Fastify and let Fastify… call Express for
 every request. Your app technically runs "on Fastify." It is not one bit faster. It's a very
 polite handshake between two frameworks where nothing actually changes. Cool sticker, no engine.
 
-**`express-fastify-runtime` is the engine.** It doesn't just *expose* your Express app to
+**`express-fastify-runtime` is the engine.** It doesn't just _expose_ your Express app to
 Fastify — it **compiles** your safe routes and middleware onto Fastify's real request pipeline,
 and only falls back to actual Express for the things that genuinely need it (multipart uploads,
 `res.render`, streaming bodies, anything unusual). You keep writing Express. It actually gets
@@ -55,8 +60,16 @@ You don't rewrite a thing. You wrap one line. Your shoes stay on.
 
 ## Install
 
+[**express-fastify-runtime** on npm](https://www.npmjs.com/package/express-fastify-runtime)
+
 ```bash
 npm install express-fastify-runtime
+# or
+pnpm add express-fastify-runtime
+# or
+yarn add express-fastify-runtime
+# or
+bun add express-fastify-runtime
 ```
 
 `express` is a **peer dependency** — bring your own (`^4.18` or `^5`). `fast()` uses whatever
@@ -74,26 +87,27 @@ Express you already have.
 You wrote a normal Express app. Wrap it. Done.
 
 ```ts
-import "express-fastify-runtime";        // load first (the one rule)
+import "express-fastify-runtime"; // load first (the one rule)
 import express from "express";
 import morgan from "morgan";
 import helmet from "helmet";
 import { fast } from "express-fastify-runtime";
 
 const app = express();
-app.use(morgan("tiny"));                 // logs, correctly, per request
-app.use(helmet());                       // security headers, intact
-app.use(express.json());                 // parsed by Fastify's fast parser under the hood
+app.use(morgan("tiny")); // logs, correctly, per request
+app.use(helmet()); // security headers, intact
+app.use(express.json()); // parsed by Fastify's fast parser under the hood
 
 app.get("/users/:id", (req, res) => {
   res.json({ id: req.params.id });
 });
 
-app.use((err, req, res, next) => {       // your error middleware still works
+app.use((err, req, res, next) => {
+  // your error middleware still works
   res.status(500).json({ error: err.message });
 });
 
-const fastApp = fast(app);               // returns a Fastify instance
+const fastApp = fast(app); // returns a Fastify instance
 fastApp.listen({ port: 3000 });
 ```
 
@@ -115,9 +129,9 @@ import { fast } from "express-fastify-runtime";
 const app = express();
 app.get("/", (req, res) => res.json({ ok: true }));
 
-const fastApp = fast(app, { fastify: { logger: true } });   // pass Fastify options through
-await fastApp.register(rateLimit, { max: 100 });            // real Fastify plugins
-await fastApp.ready();                                       // let plugins load before listen
+const fastApp = fast(app, { fastify: { logger: true } }); // pass Fastify options through
+await fastApp.register(rateLimit, { max: 100 }); // real Fastify plugins
+await fastApp.ready(); // let plugins load before listen
 await fastApp.listen({ port: 3000 });
 ```
 
@@ -128,7 +142,7 @@ Fastify's full lifecycle (so 404s and internals work):
 
 ```ts
 const fastApp = fast(app);
-const server = fastApp.server;            // http.Server
+const server = fastApp.server; // http.Server
 server.listen(3000, () => console.log("up on 3000"));
 ```
 
@@ -141,8 +155,10 @@ Node app — attach your socket server to `fastApp.server`:
 import { Server as IOServer } from "socket.io";
 
 const fastApp = fast(app);
-const io = new IOServer(fastApp.server);  // share the same HTTP server
-io.on("connection", (socket) => socket.emit("hello", "from express-fastify-runtime"));
+const io = new IOServer(fastApp.server); // share the same HTTP server
+io.on("connection", (socket) =>
+  socket.emit("hello", "from express-fastify-runtime"),
+);
 
 fastApp.server.listen(3000);
 ```
@@ -170,7 +186,10 @@ Wrap the handler/middleware. Works with plain functions and arrow functions:
 ```ts
 import { expressLane } from "express-fastify-runtime";
 
-app.get("/page", expressLane((req, res) => res.render("index", { title: "Hi" })));
+app.get(
+  "/page",
+  expressLane((req, res) => res.render("index", { title: "Hi" })),
+);
 ```
 
 ### `@ExpressLane` — decorator form (class-method controllers)
@@ -226,13 +245,13 @@ Numbers are req/s, **median of repeated runs with warmup** (single-shot HTTP ben
 20–30%, so don't trust one sample — including ours; reproduce with `npm run benchmark:table`).
 10 connections, Node on an Apple-silicon laptop. Higher is better.
 
-| Scenario | Express | Fastify | **fast()** | fast/Express | fast/Fastify |
-|---|--:|--:|--:|--:|--:|
-| Plain JSON route (5 middleware) | 39,976 | 68,112 | **50,552** | **1.26×** | 0.74× |
-| JSON DB read | 41,848 | 68,624 | **50,584** | **1.21×** | 0.74× |
-| Middleware stack (helmet+morgan+json+custom) | 29,424 | 32,736 | **40,184** | **1.37×** | **1.23×** |
-| POST 1KB JSON | 33,018 | 46,752 | **46,696** | **1.41×** | **1.00×** |
-| Auth (JWT verify) | 17,636 | 33,976 | **19,360** | **1.10×** | 0.57× |
+| Scenario                                     | Express | Fastify | **fast()** | fast/Express | fast/Fastify |
+| -------------------------------------------- | ------: | ------: | ---------: | -----------: | -----------: |
+| Plain JSON route (5 middleware)              |  39,976 |  68,112 | **50,552** |    **1.26×** |        0.74× |
+| JSON DB read                                 |  41,848 |  68,624 | **50,584** |    **1.21×** |        0.74× |
+| Middleware stack (helmet+morgan+json+custom) |  29,424 |  32,736 | **40,184** |    **1.37×** |    **1.23×** |
+| POST 1KB JSON                                |  33,018 |  46,752 | **46,696** |    **1.41×** |    **1.00×** |
+| Auth (JWT verify)                            |  17,636 |  33,976 | **19,360** |    **1.10×** |        0.57× |
 
 **Reading the table:**
 
@@ -240,7 +259,7 @@ Numbers are req/s, **median of repeated runs with warmup** (single-shot HTTP ben
 - It **matches or beats Fastify** on middleware-heavy and small-payload workloads.
 - On a tight pure-JSON hot path it trails raw Fastify a little — that's the unavoidable cost of
   presenting a real Express `req`/`res`, and it's still well ahead of Express.
-- **Auth (JWT):** the gap there isn't the adapter — it's the *library*. Fastify's benchmark uses
+- **Auth (JWT):** the gap there isn't the adapter — it's the _library_. Fastify's benchmark uses
   `@fastify/jwt` (built on `fast-jwt`), which is simply faster than `jsonwebtoken`. Want that
   speed in your Express app? Use `fast-jwt` directly in your auth middleware — it's
   framework-agnostic.

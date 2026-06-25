@@ -150,15 +150,48 @@ fastApp.server.listen(3000);
 The same pattern works for `ws`, `@fastify/websocket`, or anything that takes an
 `http.Server`.
 
-## Need a real Express-only feature on a route?
+## Controlling which lane a route runs on
 
-Some things are Express through-and-through (`res.render` with a view engine, `res.sendFile`,
-stream-piping middleware). Mark just that handler to run on the Express lane:
+Every request runs on one of two lanes ([how it works](#how-it-works-30-seconds)):
+
+- **Fastify lane (default, fast)** — safe routes and middleware are compiled onto Fastify
+  automatically. You don't annotate anything for the common case.
+- **Express lane (real Express)** — anything unsafe (multipart/uploads, `res.render`, `res.sendFile`,
+  stream-piping middleware) is detected and transparently handled by the embedded real Express app.
+
+When detection can't be sure, it already errs toward the Express lane. The two helpers below let you
+**force the Express lane** for a specific route when you want Express-only behavior guaranteed
+(e.g. a view engine) without relying on detection.
+
+### `expressLane(fn)` — force the Express lane (works anywhere)
+
+Wrap the handler/middleware. Works with plain functions and arrow functions:
 
 ```ts
 import { expressLane } from "express-fastify-runtime";
 
 app.get("/page", expressLane((req, res) => res.render("index", { title: "Hi" })));
+```
+
+### `@ExpressLane` — decorator form (class-method controllers)
+
+Requires `"experimentalDecorators": true` in your `tsconfig.json`. The Express-lane marker lives on
+the decorated method itself — register that method **directly** as the handler; don't `.bind()` it
+or wrap it in an arrow first (that creates a new function and drops the marker — use `expressLane()`
+for those cases).
+
+```ts
+import { ExpressLane } from "express-fastify-runtime";
+
+class PageController {
+  @ExpressLane
+  page(req, res) {
+    res.render("index", { title: "Hi" });
+  }
+}
+
+const pages = new PageController();
+app.get("/page", pages.page); // the decorated method carries the Express-lane marker
 ```
 
 Everything else stays on the fast lane.
@@ -272,6 +305,21 @@ Rules of the road:
 
 See `docs/` for deeper notes: `SPEC.md`, `HOW_EXPRESS_LANE_WORKS.md`,
 `FAST_PRODUCTION_CHECKLIST.md`, `OPTIMIZATION.md`, `EXPRESS_FEATURES.md`.
+
+## Reporting issues
+
+Found a bug or have a feature request? Open an issue on
+**[GitHub Issues](https://github.com/John-Daniels/express-fastify-runtime/issues)**.
+
+To help us reproduce quickly, please include:
+
+- **Versions** — `express-fastify-runtime`, `express` (4 or 5), `fastify`, and Node.
+- **Lane** — run `fast(app, { experimental: { diagnostics: true } })` and note whether the failing
+  request logs `Fastify lane` or `Express lane`.
+- **A minimal repro** — the smallest app/route that triggers it, plus the full error stack (not just
+  the message) and the request (method, path, content-type, body).
+
+Security issue? Please report it privately to the maintainer rather than opening a public issue.
 
 ## License
 

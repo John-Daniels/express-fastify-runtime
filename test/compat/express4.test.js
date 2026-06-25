@@ -44,4 +44,28 @@ describe("Express 4 compatibility (fast())", () => {
 
     await fastApp.close();
   });
+
+  it("express.json() body works on the Express-lane fallback (writable body, no readonly throw)", onlyV4, async () => {
+    // Express 4's body-parser THROWS "Cannot assign to read only property 'body'" if we attach the
+    // Fastify-parsed body as read-only and then real express.json() tries to assign req.body.
+    // (Express 5 silently no-ops, so this regression is only observable under v4.) A RegExp mount
+    // is unflattenable, forcing the whole app onto the Express lane where real express.json() runs.
+    const app = express();
+    app.use(/^\/.*/, (req, res, next) => next()); // force the Express lane
+    app.use(express.json());
+    app.post("/echo", (req, res) => res.json({ got: req.body }));
+
+    const fastApp = fast(app);
+    await fastApp.listen({ port: 0, host: "127.0.0.1" });
+    const port = fastApp.server.address().port;
+
+    const r = await fetch(`http://127.0.0.1:${port}/echo`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ a: 1, b: "two" }),
+    });
+    assert.strictEqual(r.status, 200, `expected 200, got ${r.status}`);
+    assert.deepStrictEqual(await r.json(), { got: { a: 1, b: "two" } });
+    await fastApp.close();
+  });
 });

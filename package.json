@@ -1,6 +1,6 @@
 {
   "name": "express-fastify-runtime",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Run Express apps on Fastify safely, faster, without code changes",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

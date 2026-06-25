@@ -60,18 +60,17 @@ export function mountExpress(
     const raw = request.raw;
     const res = reply.raw;
 
-    // Fastify has already consumed the body stream; attach parsed body so Express sees req.body.
-    // Define body as non-writable so express.json() cannot overwrite with empty when it reads
-    // the already-consumed stream. No Proxy — avoids per-property access overhead on Express lane.
+    // Fastify already parsed and consumed the body stream. Attach the parsed body AND set
+    // body-parser's `_body` flag so Express's express.json()/urlencoded()/etc. SKIP (they early-
+    // return when req._body is set) instead of re-reading the now-empty stream. The body must stay
+    // WRITABLE: body parsers assign `req.body = ...` unconditionally, and a read-only property
+    // throws "Cannot assign to read only property 'body'" on Express 4 (and silently drops the
+    // assignment on Express 5). The `_body` flag is what prevents the overwrite, not read-only.
     const bodyFromFastify = await Promise.resolve((request as { body?: unknown }).body);
-    const req = raw as IncomingMessageWithBody;
+    const req = raw as IncomingMessageWithBody & { _body?: boolean };
     if (bodyFromFastify !== undefined) {
-      Object.defineProperty(raw, 'body', {
-        value: bodyFromFastify,
-        writable: false,
-        configurable: true,
-        enumerable: true,
-      });
+      req.body = bodyFromFastify;
+      req._body = true;
     }
 
     await new Promise<void>((resolve, reject) => {

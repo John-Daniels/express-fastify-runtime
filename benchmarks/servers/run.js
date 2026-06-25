@@ -3,14 +3,13 @@
  * Run benchmarks: start each server, run autocannon, report.
  * Usage: node benchmarks/run.js [--express] [--fastify] [--node-http] [--runtime]
  * Default: run all four.
+ * (CommonJS so Node does not emit MODULE_TYPELESS_PACKAGE_JSON when package has no "type": "module".)
  */
 
-import { spawn } from "node:child_process";
-import net from "node:net";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+const { spawn } = require("node:child_process");
+const net = require("node:net");
+const { join } = require("node:path");
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, "../..");
 
 const BASE_PORT = Number(process.env.PORT) || 3001;
@@ -22,8 +21,9 @@ if (process.argv.includes("--express")) targets.push("express");
 if (process.argv.includes("--fastify")) targets.push("fastify");
 if (process.argv.includes("--node-http")) targets.push("node-http");
 if (process.argv.includes("--runtime")) targets.push("express-fastify-runtime");
+if (process.argv.includes("--runtime-fast")) targets.push("express-fastify-runtime-fast");
 if (targets.length === 0) {
-  targets.push("express", "fastify", "node-http", "express-fastify-runtime");
+  targets.push("express", "fastify", "node-http", "express-fastify-runtime", "express-fastify-runtime-fast");
 }
 
 const ports = {
@@ -31,6 +31,7 @@ const ports = {
   fastify: BASE_PORT + 1,
   "node-http": BASE_PORT + 2,
   "express-fastify-runtime": BASE_PORT + 3,
+  "express-fastify-runtime-fast": BASE_PORT + 4,
 };
 
 const serverFiles = {
@@ -38,6 +39,7 @@ const serverFiles = {
   fastify: join(__dirname, "fastify.js"),
   "node-http": join(__dirname, "node-http.js"),
   "express-fastify-runtime": join(__dirname, "express-fastify-runtime.js"),
+  "express-fastify-runtime-fast": join(__dirname, "express-fastify-runtime-fast.js"),
 };
 
 function waitForPort(port, timeoutMs = 8000) {
@@ -59,12 +61,15 @@ function waitForPort(port, timeoutMs = 8000) {
 }
 
 async function runAutocannon(port) {
-  const autocannon = await import("autocannon").catch(() => null);
-  if (!autocannon) {
+  let autocannon;
+  try {
+    const mod = await import("autocannon");
+    autocannon = mod.default;
+  } catch (_) {
     console.log("  (install: npm i -D autocannon)");
     return;
   }
-  const result = await autocannon.default({
+  const result = await autocannon({
     url: `http://127.0.0.1:${port}/`,
     duration: Number(DURATION),
     connections: 10,

@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, "feature/**"]
+  pull_request:
+
+jobs:
+  test:
+    name: Node ${{ matrix.node }} × Express ${{ matrix.express }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "22"]
+        express: ["4", "5"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm install
+      # express is a peer dependency; pin the major under test so both legacy (4) and modern (5) are exercised.
+      - run: npm install --no-save express@${{ matrix.express }}
+      - run: node -e "console.log('Express', require('express/package.json').version)"
+      - run: npm test
+
+  benchmark-smoke:
+    name: Benchmark smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install
+      - run: npm run build
+      - run: ROUNDS=1 DURATION=1 WARMUP=1 node benchmarks/table/run.js

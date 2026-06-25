@@ -3,7 +3,8 @@
  * If unsure → Express lane. Never silently downgrade.
  */
 
-import type { ExpressHandler } from '../types/express.js';
+import type { ExpressHandler } from '../types/express';
+import { unwrapHandler } from './unwrap';
 
 const UNSAFE_NAMES = new Set([
   'multer',
@@ -12,6 +13,13 @@ const UNSAFE_NAMES = new Set([
   'formidable',
   'busboy',
   'multipart',
+  // Express body parsers that read the raw request stream. On the Fastify lane the body stream
+  // is already consumed and there is no parser for these content types, so they must run on the
+  // Express lane. NOTE: express.json()'s `jsonParser` is intentionally NOT here — it is mapped to
+  // Fastify's native JSON parser (see express/middleware.ts) and stays on the fast lane.
+  'urlencodedparser', // express.urlencoded()
+  'rawparser', // express.raw()
+  'textparser', // express.text()
 ]);
 
 const UNSAFE_PATTERNS = [
@@ -27,8 +35,12 @@ const UNSAFE_PATTERNS = [
  */
 export function isExpressRequired(fn: ExpressHandler): boolean {
   if (typeof fn !== 'function') return true;
-  const s = (fn as unknown as { name?: string }).name || '';
-  const str = fn.toString();
+  // Unwrap APM wrappers (OpenTelemetry/Sentry) so body parsers/multer/etc. are recognized even
+  // when an instrumentation library has wrapped them (otherwise fn.name is e.g. "patched").
+  const target = unwrapHandler(fn) as ExpressHandler;
+  if (typeof target !== 'function') return true;
+  const s = (target as unknown as { name?: string }).name || '';
+  const str = target.toString();
   const nameLower = s.toLowerCase();
   if (UNSAFE_NAMES.has(nameLower)) return true;
   for (const name of UNSAFE_NAMES) {

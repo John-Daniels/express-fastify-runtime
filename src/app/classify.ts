@@ -3,8 +3,8 @@
  * No guessing: if unsure → Express lane.
  */
 
-import type { RouteEntry, ClassifiedRoute } from '../types/internal.js';
-import { isExpressRequired } from '../utils/detect.js';
+import type { RouteEntry, ClassifiedRoute } from '../types/internal';
+import { isExpressRequired } from '../utils/detect';
 
 export function classifyRoute(entry: RouteEntry): ClassifiedRoute[] {
   if (entry.type === 'middleware') {

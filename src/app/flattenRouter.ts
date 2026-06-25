@@ -7,9 +7,26 @@
  * we only flatten routers that have no middleware layers (route-only).
  */
 
-import type { RouteEntry } from '../types/internal.js';
-import type { ExpressHandler } from '../types/express.js';
-import { joinPath } from '../utils/path.js';
+import type { RouteEntry } from '../types/internal';
+import type { ExpressHandler } from '../types/express';
+import { isExpressLaneHandler } from '../runtime/expressLane';
+import { expressJsonPassthrough } from '../express/middleware';
+import { joinPath } from '../utils/path';
+
+/**
+ * Express body parsers, identified by layer/sub-layer `name` (Express preserves it even when an
+ * APM like OpenTelemetry/Sentry wraps the handler, so handle.name becomes e.g. "patched").
+ *
+ * - express.json() → Fastify already parses JSON, so on the Fastify lane the parser is a no-op
+ *   (`expressJsonPassthrough`); req.body comes from Fastify. Otherwise the real jsonParser would
+ *   try to read the already-consumed request stream and throw "argument stream must be a stream".
+ * - express.urlencoded()/raw()/text() read the raw stream and Fastify has no parser for those
+ *   content types — they're left as-is so classify() (utils/detect) routes routes/middleware
+ *   using them to the Express lane (real Express parses the body).
+ */
+function neutralizeJsonParser(name: string | undefined, handle: ExpressHandler): ExpressHandler {
+  return name === 'jsonParser' ? (expressJsonPassthrough() as ExpressHandler) : handle;
+}
 
 /** Minimal Express Router shape (express + router package). */
 export interface ExpressRouterLike {
@@ -19,6 +36,10 @@ export interface ExpressRouterLike {
 /** Layer: either middleware (no route) or route (has route). _path is set by our patch for middleware. */
 export interface ExpressLayerLike {
   path?: string;
+  /** Layer name — Express sets it from the original handler's name and KEEPS it even when an
+   * instrumentation library (e.g. OpenTelemetry/Sentry) wraps the handler. More reliable than
+   * handle.name for identifying Express built-ins. */
+  name?: string;
   /** Set by patchRouterLayer when Layer(path, options, fn) is called with a string path. */
   _path?: string;
   /** router.use('/') creates a layer with slash: true. */
@@ -31,7 +52,7 @@ export interface ExpressLayerLike {
 export interface ExpressRouteLike {
   path: string;
   methods: Record<string, boolean>;
-  stack: Array<{ method?: string; handle: ExpressHandler }>;
+  stack: Array<{ method?: string; name?: string; handle: ExpressHandler }>;
 }
 
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options'];
@@ -71,14 +92,18 @@ export function flattenRouter(router: ExpressRouterLike, mountPath: string): Rou
   for (const layer of stack) {
     if (layer.route) {
       const route = layer.route;
-      const routePath = typeof route.path === 'string' ? route.path : '/';
-      const fullPath = joinPath(mountPath, routePath);
+      // Skip RegExp/array routes so they stay on Express lane (res.render, etc.)
+      if (typeof route.path !== 'string') continue;
+      // Skip routes whose handler(s) are marked with expressLane() or @ExpressLane()
+      const hasExpressLaneHandler = route.stack.some((l) => isExpressLaneHandler(l.handle));
+      if (hasExpressLaneHandler) continue;
+      const fullPath = joinPath(mountPath, route.path);
 
       for (const method of Object.keys(route.methods)) {
         const m = method === '_all' ? 'all' : method.toLowerCase();
         const handlers = route.stack
           .filter((l) => l.method === undefined || l.method === m)
-          .map((l) => l.handle as ExpressHandler);
+          .map((l) => neutralizeJsonParser(l.name, l.handle as ExpressHandler));
         if (handlers.length === 0) continue;
         const validMethod = m === 'all' || HTTP_METHODS.includes(m) ? m : null;
         if (!validMethod) continue;
@@ -92,11 +117,25 @@ export function flattenRouter(router: ExpressRouterLike, mountPath: string): Rou
       continue;
     }
 
+    const handle = layer.handle;
+
+    // Express 4 injects `query` and `expressInit` middleware into the app router stack
+    // (Express 5 does not). They must NOT run on the Fastify lane: `expressInit` reassigns
+    // req/res __proto__ to Express's own objects (which breaks our adapter — e.g. res.setHeader
+    // then hits a non-real response and helmet/etc. throw), and Fastify already parses the query
+    // string. Identify them by `layer.name` — Express preserves it even when an instrumentation
+    // library (OpenTelemetry/Sentry) wraps the handler (then handle.name is the wrapper, e.g.
+    // "patched"). Fall back to handle.name for safety.
+    const builtinName =
+      layer.name || (typeof handle === 'function' ? (handle as { name?: string }).name : '');
+    if (builtinName === 'query' || builtinName === 'expressInit') continue;
+
     const middlewarePath = getMiddlewareLayerPath(layer);
     if (middlewarePath === null) return null;
 
+    if (isExpressLaneHandler(handle)) continue;
+
     const fullPath = joinPath(mountPath, middlewarePath);
-    const handle = layer.handle;
 
     if (isExpressRouter(handle)) {
       const nested = flattenRouter(handle, fullPath);
@@ -106,7 +145,7 @@ export function flattenRouter(router: ExpressRouterLike, mountPath: string): Rou
       entries.push({
         type: 'middleware',
         path: fullPath,
-        handlers: [handle as ExpressHandler],
+        handlers: [neutralizeJsonParser(builtinName, handle as ExpressHandler)],
       });
     }
   }

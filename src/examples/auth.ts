@@ -3,8 +3,8 @@
  * Same API as Express; runs on Fastify lane.
  */
 
-import { createApp } from '../index.js';
-import type { ExpressRequest, ExpressResponse, NextFunction } from '../types/express.js';
+import { createApp } from '../index';
+import type { ExpressRequest, ExpressResponse, NextFunction } from '../types/express';
 
 const app = createApp();
 

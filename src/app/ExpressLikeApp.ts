@@ -1,21 +1,20 @@
 /**
- * Express-like app: app.use, app.get, app.listen.
- * Routes are immutable after listen().
+ * Express-like app stub: app.use, app.get, app.listen.
+ * Routes are immutable after listen(). Full Router handling is in lifecycle.ts.
  */
 
-import type { ExpressHandler } from '../types/express.js';
-import type { ExpressLikeApp as IExpressLikeApp, ServerLike } from '../types/internal.js';
-import { assertNotLocked } from '../utils/assert.js';
+import type { ExpressHandler } from '../types/express';
+import type { ExpressLikeApp as IExpressLikeApp, ServerLike, UseHandler } from '../types/internal';
+import { assertNotLocked } from '../utils/assert';
 
-export function createExpressLikeApp(routeStore: import('./RouteStore.js').RouteStore, locked: { current: boolean }) {
+export function createExpressLikeApp(routeStore: import('./RouteStore').RouteStore, locked: { current: boolean }) {
   const app: IExpressLikeApp = {
-    use(pathOrHandler: string | ExpressHandler, ...handlers: ExpressHandler[]) {
+    use(pathOrHandler: string | UseHandler, ...handlers: UseHandler[]) {
       assertNotLocked(locked.current);
-      if (typeof pathOrHandler === 'function') {
-        routeStore.addMiddleware('/', pathOrHandler, ...handlers);
-      } else {
-        routeStore.addMiddleware(pathOrHandler, ...handlers);
-      }
+      const path = typeof pathOrHandler === 'string' ? pathOrHandler : '/';
+      const allHandlers: UseHandler[] =
+        typeof pathOrHandler === 'string' ? handlers : [pathOrHandler, ...handlers];
+      routeStore.addMiddleware(path, ...(allHandlers as ExpressHandler[]));
       return app;
     },
 

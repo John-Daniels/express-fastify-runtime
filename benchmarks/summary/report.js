@@ -1,8 +1,11 @@
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+/**
+ * Run full benchmark suite (all run.js scripts).
+ * CommonJS so Node does not emit MODULE_TYPELESS_PACKAGE_JSON when package has no "type": "module".
+ */
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const { spawn } = require("node:child_process");
+const { join } = require("node:path");
+
 const rootDir = join(__dirname, "../..");
 
 const suites = [
@@ -20,11 +23,10 @@ const suites = [
 // Add uploads back
 suites.splice(6, 0, "benchmarks/uploads/run.js");
 
-async function runSuite(scriptPath) {
+function runSuite(scriptPath) {
   return new Promise((resolve, reject) => {
     console.log(`\n>>> Running ${scriptPath} ...`);
 
-    // Pass specific env to speed up summary run if needed, currently using default DURATION=5 from individual scripts or env
     const child = spawn(process.execPath, [scriptPath], {
       stdio: "inherit",
       cwd: rootDir,
@@ -52,7 +54,6 @@ async function main() {
       await runSuite(suite);
     } catch (err) {
       console.error("FAILED:", err.message);
-      // Continue or exit? prompt says "aggregated via ...". We try to run all.
     }
   }
 

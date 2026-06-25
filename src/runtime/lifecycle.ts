@@ -3,18 +3,21 @@
  */
 
 import Fastify from 'fastify';
-import type { ExpressLikeApp, ServerLike } from '../types/internal.js';
-import type { ExpressHandler } from '../types/express.js';
-import { classifyAll } from '../app/classify.js';
-import { createExpressEngine } from '../express/engine.js';
-import { mountExpress } from '../express/mount.js';
-import { registerCompiledRoutes } from '../fastify/register.js';
-import { populateExpressApp } from './populateExpress.js';
-import { assertNotLocked } from '../utils/assert.js';
-import { RouteStore } from '../app/RouteStore.js';
-import { isExpressRouter, flattenRouter } from '../app/flattenRouter.js';
-import { normalizePath } from '../utils/path.js';
-import { createRuntimeLogger } from '../utils/runtimeLogger.js';
+import type { ExpressLikeApp, ServerLike, UseHandler } from '../types/internal';
+import type { ExpressHandler } from '../types/express';
+import { classifyAll } from '../app/classify';
+import { createExpressEngine } from '../express/engine';
+import { mountExpress } from '../express/mount';
+import { registerCompiledRoutes } from '../fastify/register';
+import { populateExpressApp } from './populateExpress';
+import { assertNotLocked } from '../utils/assert';
+import { findErrorMiddleware, wrapErrorHandler } from './errorHandler';
+import { createRequestAdapter } from '../fastify/adapters/request';
+import { adaptResponse } from '../fastify/adapters/response';
+import { RouteStore } from '../app/RouteStore';
+import { isExpressRouter, flattenRouter } from '../app/flattenRouter';
+import { normalizePath } from '../utils/path';
+import { createRuntimeLogger } from '../utils/runtimeLogger';
 
 export interface CreateAppOptions {
   /** If true, log compile and lane info (dev). Enables fallback warnings when downgrading to Express lane. */
@@ -27,11 +30,11 @@ export function createApp(options?: CreateAppOptions): ExpressLikeApp {
   const runtimeLogger = createRuntimeLogger(options);
 
   const app: ExpressLikeApp = {
-    use(pathOrHandler: string | ExpressHandler, ...handlers: ExpressHandler[]) {
+    use(pathOrHandler: string | UseHandler, ...handlers: UseHandler[]) {
       assertNotLocked(locked.current);
       const path = typeof pathOrHandler === 'string' ? normalizePath(pathOrHandler) : '/';
-      const allHandlers: ExpressHandler[] =
-        typeof pathOrHandler === 'function' ? [pathOrHandler, ...handlers] : handlers;
+      const allHandlers: UseHandler[] =
+        typeof pathOrHandler === 'string' ? handlers : [pathOrHandler, ...handlers];
 
       let middlewareGroup: ExpressHandler[] = [];
       for (const h of allHandlers) {
@@ -44,11 +47,13 @@ export function createApp(options?: CreateAppOptions): ExpressLikeApp {
           if (flat !== null) {
             routeStore.addEntries(flat);
           } else {
-            runtimeLogger.warnDowngrade('express.Router (middleware or RegExp path)');
+            runtimeLogger.warnDowngrade(
+              'express.Router (middleware or RegExp path). Tip: import express-fastify-runtime before Express or routers so middleware paths can be detected'
+            );
             routeStore.addMiddleware(path, h as ExpressHandler);
           }
         } else {
-          middlewareGroup.push(h);
+          middlewareGroup.push(h as ExpressHandler);
         }
       }
       if (middlewareGroup.length > 0) {
@@ -138,11 +143,22 @@ export function createApp(options?: CreateAppOptions): ExpressLikeApp {
 });
       const classified = classifyAll(routeStore.getAll());
       const runMiddleware = (
-        _req: import('../types/express.js').ExpressRequest,
-        _res: import('../types/express.js').ExpressResponse,
-        next: import('../types/express.js').NextFunction
+        _req: import('../types/express').ExpressRequest,
+        _res: import('../types/express').ExpressResponse,
+        next: import('../types/express').NextFunction
       ) => next();
       registerCompiledRoutes(fastify, classified, runMiddleware);
+
+      // Wire Express 4-arg error middleware → Fastify error handler so next(err)/throw on the
+      // Fastify lane reaches it (parity with fast()). The error mw is excluded from the normal
+      // middleware chain (see compile.ts), so it only runs here.
+      const errorMiddleware = findErrorMiddleware(routeStore.getAll());
+      if (errorMiddleware) {
+        fastify.setErrorHandler(
+          wrapErrorHandler(errorMiddleware, createRequestAdapter(), adaptResponse)
+        );
+      }
+
       mountExpress(fastify, express);
 
       const listenOpts = { port: p ?? 0, host: h ?? '0.0.0.0' };

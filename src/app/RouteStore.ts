@@ -2,9 +2,9 @@
  * Stores routes and middleware before compile. Immutable after listen().
  */
 
-import type { RouteEntry } from '../types/internal.js';
-import type { ExpressHandler } from '../types/express.js';
-import { HTTP_METHODS, type HttpMethod } from '../types/express.js';
+import type { RouteEntry } from '../types/internal';
+import type { ExpressHandler } from '../types/express';
+import { HTTP_METHODS, type HttpMethod } from '../types/express';
 
 export class RouteStore {
   private entries: RouteEntry[] = [];

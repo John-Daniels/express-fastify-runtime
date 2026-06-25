@@ -1,4 +1,5 @@
 import { createApp } from "../../dist/index.js";
+import express from "express";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { SimpleJSONDB } from "./SimpleJSONDB.js";
@@ -10,7 +11,7 @@ const db = new SimpleJSONDB(DB_PATH);
 const app = createApp();
 const PORT = Number(process.env.PORT) || 3003;
 
-app.use(import("express").then((m) => m.default.json())); // Use express.json
+app.use(express.json());
 
 app.post("/todos", (req, res) => {
   db.push(req.body);

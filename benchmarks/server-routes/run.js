@@ -7,12 +7,10 @@
  * Default: run both.
  */
 
-import { spawn } from "node:child_process";
-import net from "node:net";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+const { spawn } = require("node:child_process");
+const net = require("node:net");
+const { join } = require("node:path");
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, "../..");
 
 const BASE_PORT = Number(process.env.PORT) || 3001;
@@ -23,21 +21,22 @@ const targets = [];
 if (process.argv.includes("--express")) targets.push("express-routes");
 if (process.argv.includes("--runtime"))
   targets.push("express-fastify-runtime-routes");
+if (process.argv.includes("--runtime-fast"))
+  targets.push("express-fastify-runtime-routes-fast");
 if (targets.length === 0) {
-  targets.push("express-routes", "express-fastify-runtime-routes");
+  targets.push("express-routes", "express-fastify-runtime-routes", "express-fastify-runtime-routes-fast");
 }
 
 const ports = {
   "express-routes": BASE_PORT,
   "express-fastify-runtime-routes": BASE_PORT + 3,
+  "express-fastify-runtime-routes-fast": BASE_PORT + 4,
 };
 
 const serverFiles = {
   "express-routes": join(__dirname, "express-routes.js"),
-  "express-fastify-runtime-routes": join(
-    __dirname,
-    "express-fastify-runtime-routes.js",
-  ),
+  "express-fastify-runtime-routes": join(__dirname, "express-fastify-runtime-routes.js"),
+  "express-fastify-runtime-routes-fast": join(__dirname, "express-fastify-runtime-routes-fast.js"),
 };
 
 const benchmarkPath = "/api/auth/bar";
@@ -61,12 +60,15 @@ function waitForPort(port, timeoutMs = 8000) {
 }
 
 async function runAutocannon(port) {
-  const autocannon = await import("autocannon").catch(() => null);
-  if (!autocannon) {
+  let autocannon;
+  try {
+    const mod = await import("autocannon");
+    autocannon = mod.default;
+  } catch (_) {
     console.log("  (install: npm i -D autocannon)");
     return;
   }
-  const result = await autocannon.default({
+  const result = await autocannon({
     url: `http://127.0.0.1:${port}${benchmarkPath}`,
     duration: Number(DURATION),
     connections: 10,

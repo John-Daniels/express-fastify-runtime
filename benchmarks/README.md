@@ -18,6 +18,40 @@ Same app shape for all four:
 
 So we measure: middleware chain + single JSON response.
 
+## Methodology (how these numbers avoid lying)
+
+All runners share one harness — [`benchmarks/lib/bench.js`](./lib/bench.js) — so the method is
+identical everywhere:
+
+- **Warmup** — a discarded warmup run per server so we never measure cold JIT.
+- **Median of N rounds** — rejects thermal/scheduling outliers (a single sample on a laptop can
+  swing 2×).
+- **Many connections** (`conns=50`, `pipelining=1` by default) — realistic concurrent load that
+  isn't loopback-idle-bound. (At the old `conns=10, pipelining=1`, the server sat ~30% idle and the
+  result was scheduling noise — that's what once made fast() look *slower than Express*.)
+- **Cooldown** between servers — no thermal/CPU carryover from the previous target.
+
+**How to read the results (sanity checks):**
+
+1. **fast() should be ≥ Express, always.** If not, the machine is throttling — rerun idle.
+2. **fast() ≈ `express-fastify-runtime` (createApp).** They share the compile/adapter engine, so
+   they must track each other (within ~5%). A large gap = a throttled run, not a real difference.
+3. **Latency should be uniform** across stacks for in-memory routes. One outlier row = that row
+   throttled.
+
+> On a laptop, prefer running a single benchmark in isolation. The full `summary` suite runs ~10
+> sub-benchmarks back-to-back; even with cooldowns, sustained load can heat the CPU. For quotable
+> numbers use `benchmarks/table/run.js` (interleaved warmup + median).
+>
+> **fast vs Fastify depends on load shape — and both numbers are real.**
+> Under realistic load (`pipelining=1`, the default) fast() is **~0.7× Fastify** on the simplest
+> plain-JSON route, **~1.0–1.07×** on middleware/payload-heavy routes, and **always ≥ Express
+> (1.1–1.4×)**. The plain-JSON gap is fast()'s small per-request overhead (adapter + middleware
+> runner): at one request per connection it shows up as latency, so throughput drops. Under CPU
+> saturation (`PIPELINING=16`) that latency is hidden and fast() rises to **~0.94× Fastify** — the
+> pure-compute efficiency view. We default to the realistic (pipelining=1) view; quote the saturated
+> one only when you mean "max CPU capacity."
+
 ## Run one server (manual)
 
 Start a server, then use `curl` or a load tool against it.
@@ -57,6 +91,12 @@ npm run benchmark -- --runtime
 
 - `MW` — number of middleware (default `5`)
 - `PORT` — base port; each server uses PORT, PORT+1, PORT+2, PORT+3 (default 3001)
+- `CONNECTIONS` — concurrent connections (default `50`)
+- `PIPELINING` — requests in flight per connection (default `1` = realistic; set higher to CPU-saturate small in-memory routes — **don't** pipeline upload/large-body benchmarks)
+- `DURATION` — seconds per measured round (default `3`)
+- `WARMUP` — seconds of discarded warmup per server (default `1`)
+- `ROUNDS` — measured rounds; the median is reported (default `3`)
+- `COOLDOWN` — ms pause between servers (default `750`)
 
 ## Output
 

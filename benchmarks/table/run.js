@@ -18,6 +18,11 @@ const rootDir = join(__dirname, "../..");
 const ROUNDS = Number(process.env.ROUNDS || 5);
 const DURATION = Number(process.env.DURATION || 3);
 const WARMUP = Number(process.env.WARMUP || 2);
+// conns=10 was idle-bound (~30% CPU idle) → noisy and understated fast(). Use many concurrent
+// connections (realistic, pipelining=1) so the result is stable without the distortion that HTTP
+// pipelining introduces (pipelining batches favor Fastify's pipeline and misrepresent normal load).
+const CONNECTIONS = Number(process.env.CONNECTIONS || 50);
+const PIPELINING = Number(process.env.PIPELINING || 1);
 const MW = process.env.MW || "5";
 const BASE = Number(process.env.PORT) || 6001;
 
@@ -48,7 +53,7 @@ function median(a) { const s = [...a].sort((x, y) => x - y); const m = s.length 
 
 async function sample(opts, dur) {
   const autocannon = (await import("autocannon")).default;
-  const r = await autocannon({ ...opts, connections: 10, pipelining: 1, duration: dur });
+  const r = await autocannon({ ...opts, connections: CONNECTIONS, pipelining: PIPELINING, duration: dur });
   return r.requests?.average ?? 0;
 }
 
@@ -58,42 +63,40 @@ async function getToken(port, loginPath) {
   return j.token;
 }
 
-async function runScenario(scn, portBase) {
-  const procs = [];
-  const ports = {};
-  VARIANTS.forEach((v, i) => {
-    const port = portBase + i;
-    ports[v] = port;
-    procs.push(
-      spawn(process.execPath, [join(__dirname, "..", scn.dir, v + ".js")], {
-        stdio: "ignore",
-        env: { ...process.env, PORT: String(port), MW, BENCH_AUTO_CLOSE: "1" },
-        cwd: rootDir,
-      }),
-    );
+// Measure each variant in ISOLATION (only that one server running). Running all variants at once
+// makes the measured server fight the other Node processes + the load generator for cores on a
+// laptop, which produced impossible results (e.g. fast() 1.4× Fastify). One server at a time is the
+// reliable method (matches benchmarks/servers/run.js).
+async function measureVariant(scn, v, port) {
+  const child = spawn(process.execPath, [join(__dirname, "..", scn.dir, v + ".js")], {
+    stdio: "ignore",
+    env: { ...process.env, PORT: String(port), MW, BENCH_AUTO_CLOSE: "1" },
+    cwd: rootDir,
   });
   try {
-    await Promise.all(VARIANTS.map((v) => waitForPort(ports[v])));
-    const optsFor = async (v) => {
-      const headers = { "content-type": "application/json" };
-      if (scn.login) headers.Authorization = `Bearer ${await getToken(ports[v], scn.login)}`;
-      return { url: `http://127.0.0.1:${ports[v]}${scn.path}`, method: scn.method, headers, body: scn.body };
-    };
-    const opts = Object.fromEntries(await Promise.all(VARIANTS.map(async (v) => [v, await optsFor(v)])));
-    for (const v of VARIANTS) await sample(opts[v], WARMUP); // warmup (discarded)
-    const samples = Object.fromEntries(VARIANTS.map((v) => [v, []]));
-    for (let r = 0; r < ROUNDS; r++) {
-      for (const v of VARIANTS) samples[v].push(await sample(opts[v], DURATION));
-    }
-    return Object.fromEntries(VARIANTS.map((v) => [v, median(samples[v])]));
+    await waitForPort(port);
+    const headers = { "content-type": "application/json" };
+    if (scn.login) headers.Authorization = `Bearer ${await getToken(port, scn.login)}`;
+    const opts = { url: `http://127.0.0.1:${port}${scn.path}`, method: scn.method, headers, body: scn.body };
+    await sample(opts, WARMUP); // warmup (discarded)
+    const runs = [];
+    for (let r = 0; r < ROUNDS; r++) runs.push(await sample(opts, DURATION));
+    return median(runs);
   } finally {
-    procs.forEach((p) => p.kill("SIGTERM"));
-    await new Promise((r) => setTimeout(r, 300));
+    child.kill("SIGTERM");
+    await new Promise((r) => setTimeout(r, 500)); // cooldown before the next variant
   }
 }
 
+async function runScenario(scn, portBase) {
+  const med = {};
+  let i = 0;
+  for (const v of VARIANTS) med[v] = await measureVariant(scn, v, portBase + i++);
+  return med;
+}
+
 async function main() {
-  console.log(`# Benchmark table (median of ${ROUNDS}×${DURATION}s, ${WARMUP}s warmup, conns=10, MW=${MW})\n`);
+  console.log(`# Benchmark table (median of ${ROUNDS}×${DURATION}s, ${WARMUP}s warmup, conns=${CONNECTIONS}, pipelining=${PIPELINING}, MW=${MW})\n`);
   console.log("| Scenario | Express | Fastify | fast() | fast/Express | fast/Fastify |");
   console.log("|---|--:|--:|--:|--:|--:|");
   let portBase = BASE;

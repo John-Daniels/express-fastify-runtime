@@ -10,6 +10,7 @@
 const { spawn } = require("node:child_process");
 const net = require("node:net");
 const { join } = require("node:path");
+const { sample, fmtSample, COOLDOWN, SETTINGS } = require("../lib/bench");
 
 const rootDir = join(__dirname, "../..");
 
@@ -60,29 +61,7 @@ function waitForPort(port, timeoutMs = 8000) {
 }
 
 async function runAutocannon(port) {
-  let autocannon;
-  try {
-    const mod = await import("autocannon");
-    autocannon = mod.default;
-  } catch (_) {
-    console.log("  (install: npm i -D autocannon)");
-    return;
-  }
-  const result = await autocannon({
-    url: `http://127.0.0.1:${port}${benchmarkPath}`,
-    duration: Number(DURATION),
-    connections: 10,
-    pipelining: 1,
-  });
-  const avg = result.requests?.average ?? 0;
-  const mean = result.latency?.mean ?? 0;
-  console.log(
-    "  req/s:",
-    avg.toFixed(0),
-    "| latency mean:",
-    mean.toFixed(2),
-    "ms",
-  );
+  console.log("  " + fmtSample(await sample({ url: `http://127.0.0.1:${port}${benchmarkPath}` })));
 }
 
 async function runOne(name) {
@@ -98,17 +77,12 @@ async function runOne(name) {
     await runAutocannon(port);
   } finally {
     child.kill("SIGTERM");
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, COOLDOWN));
   }
 }
 
 async function main() {
-  console.log(
-    "Routes benchmark (GET %s, MW=%s, duration=%ss)\n",
-    benchmarkPath,
-    MW,
-    DURATION,
-  );
+  console.log("Routes benchmark (GET %s, MW=%s) — %s\n", benchmarkPath, MW, SETTINGS);
 
   for (const name of targets) {
     process.stdout.write(name + ": ");

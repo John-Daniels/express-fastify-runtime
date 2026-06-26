@@ -10,6 +10,7 @@ import parseRange from 'range-parser';
 import typeis from 'type-is';
 import type { FastifyRequest } from 'fastify';
 import type { ExpressRequest } from '../../types/express';
+import { defineWritable } from './define';
 
 /** Express: Referer and Referrer are interchangeable. */
 function getHeader(
@@ -141,12 +142,6 @@ const requestProto = {
   header(name: string) {
     return getHeader((this as unknown as ReqState)._raw?.headers ?? {}, name);
   },
-  get method() {
-    return (this as unknown as ReqState)._raw?.method;
-  },
-  get headers() {
-    return (this as unknown as ReqState)._raw?.headers ?? {};
-  },
   get rawHeaders() {
     return (this as unknown as ReqState)._raw?.rawHeaders;
   },
@@ -165,49 +160,11 @@ const requestProto = {
   get aborted() {
     return (this as unknown as ReqState)._raw?.aborted ?? false;
   },
-  get path() {
-    return ((this as { url?: string }).url || '/').split('?')[0] || '/';
-  },
-  get protocol() {
-    const raw = (this as unknown as ReqState)._raw;
-    return raw ? getProtocol(raw) : 'http';
-  },
-  get secure() {
-    return (this as unknown as ExpressRequest).protocol === 'https';
-  },
-  get ip() {
-    const raw = (this as unknown as ReqState)._raw;
-    return raw ? getIp(raw) : '';
-  },
-  get ips() {
-    const raw = (this as unknown as ReqState)._raw;
-    return raw ? getIps(raw) : [];
-  },
-  get hostname() {
-    const raw = (this as unknown as ReqState)._raw;
-    return raw ? getHostname(raw) : '';
-  },
-  get host() {
-    return ((this as unknown as ReqState)._raw?.headers?.host as string) ?? '';
-  },
   get xhr() {
     return (
       ((this as unknown as ReqState)._raw?.headers?.['x-requested-with'] as string)?.toLowerCase() ===
       'xmlhttprequest'
     );
-  },
-  get fresh() {
-    return false;
-  },
-  get stale() {
-    return true;
-  },
-  get cookies() {
-    const raw = (this as unknown as ReqState)._raw;
-    return raw ? parseCookieHeader(raw.headers.cookie as string) : {};
-  },
-  get signedCookies() {
-    return {};
   },
   accepts(...types: string[]) {
     const acc = accepts(this as unknown as ExpressRequest);
@@ -235,6 +192,32 @@ const requestProto = {
     return typeis(this as unknown as ExpressRequest, arr) as string | false;
   },
 };
+
+/**
+ * Express properties that are DERIVED but also commonly ASSIGNED by middleware (trust-proxy rewrites
+ * req.ip/protocol/hostname, cookie-parser sets req.cookies, host-rewriting, cache middleware sets
+ * req.fresh, ...). They must be writable: a read-only getter makes those assignments throw in strict
+ * mode or silently drop. defineWritable installs accessors whose `set` shadows the getter with a
+ * per-instance own property (concurrency-safe). See define.ts.
+ */
+const rawOf = (self: Record<string, unknown>) => (self as unknown as ReqState)._raw;
+
+// memoize: stable for the life of the request + non-trivial to compute → cache (also a speedup).
+defineWritable(requestProto, 'protocol', (s) => { const r = rawOf(s); return r ? getProtocol(r) : 'http'; }, true);
+defineWritable(requestProto, 'ip', (s) => { const r = rawOf(s); return r ? getIp(r) : ''; }, true);
+defineWritable(requestProto, 'ips', (s) => { const r = rawOf(s); return r ? getIps(r) : []; }, true);
+defineWritable(requestProto, 'hostname', (s) => { const r = rawOf(s); return r ? getHostname(r) : ''; }, true);
+defineWritable(requestProto, 'host', (s) => (rawOf(s)?.headers?.host as string) ?? '', true);
+defineWritable(requestProto, 'cookies', (s) => { const r = rawOf(s); return r ? parseCookieHeader(r.headers.cookie as string) : {}; }, true);
+defineWritable(requestProto, 'signedCookies', () => ({}), true);
+
+// live: derived from OTHER mutable props, so recompute every read until explicitly overridden.
+defineWritable(requestProto, 'method', (s) => rawOf(s)?.method);
+defineWritable(requestProto, 'headers', (s) => rawOf(s)?.headers ?? {});
+defineWritable(requestProto, 'path', (s) => ((s as { url?: string }).url || '/').split('?')[0] || '/');
+defineWritable(requestProto, 'secure', (s) => (s as unknown as ExpressRequest).protocol === 'https');
+defineWritable(requestProto, 'fresh', () => false);
+defineWritable(requestProto, 'stale', (s) => !(s as unknown as ExpressRequest).fresh);
 
 /**
  * Returns a request adapter that builds a FRESH Express-like req per request (methods

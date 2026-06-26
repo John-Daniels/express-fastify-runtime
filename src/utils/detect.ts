@@ -28,6 +28,11 @@ const UNSAFE_PATTERNS = [
   /req\.on\s*\(\s*['"]end['"]/,
   /multipart\/form-data/,
   /formidable|busboy|multer/,
+  // Express route-skipping control flow. next('route')/next('router') means "skip the rest of this
+  // route/router and try the next match" — semantics our flattened single-chain runner can't honor
+  // (it would treat the string as an error). Run these on the real Express lane instead.
+  /next\s*\(\s*['"]route['"]\s*\)/,
+  /next\s*\(\s*['"]router['"]\s*\)/,
 ];
 
 /**

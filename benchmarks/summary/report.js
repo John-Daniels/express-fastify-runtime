@@ -23,6 +23,15 @@ const suites = [
 // Add uploads back
 suites.splice(6, 0, "benchmarks/uploads/run.js");
 
+// The full suite is a quick OVERVIEW across ~10 sub-benchmarks, so it uses lighter measurement than
+// a single benchmark's defaults (otherwise it runs ~8 min). Still warmed + median. Set these BEFORE
+// requiring lib/bench so the printed methodology matches, and children inherit via process.env. For
+// quotable numbers, run a single benchmark or the table harness, or override ROUNDS/DURATION.
+if (process.env.DURATION === undefined) process.env.DURATION = "2";
+if (process.env.ROUNDS === undefined) process.env.ROUNDS = "2";
+if (process.env.WARMUP === undefined) process.env.WARMUP = "1";
+if (process.env.COOLDOWN === undefined) process.env.COOLDOWN = "400";
+
 function runSuite(scriptPath) {
   return new Promise((resolve, reject) => {
     console.log(`\n>>> Running ${scriptPath} ...`);
@@ -43,9 +52,16 @@ function runSuite(scriptPath) {
 }
 
 async function main() {
+  const { SETTINGS } = require("../lib/bench");
   console.log("==========================================");
   console.log("    RUNNING COMPLETE BENCHMARK SUITE");
   console.log("==========================================");
+  console.log(`Methodology: ${SETTINGS}`);
+  console.log(
+    "Read it right: fast() should be >= Express and ~= express-fastify-runtime (they share the\n" +
+      "engine). If fast() diverges far from express-fastify-runtime, the machine is throttling —\n" +
+      "rerun on an idle machine. Set PIPELINING=1 for a realistic-load view; >1 = CPU-saturated.\n",
+  );
 
   const start = Date.now();
 

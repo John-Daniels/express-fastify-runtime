@@ -14,13 +14,18 @@ This list is derived from the **Express 5.2.1** codebase (`express-5.2.1/lib/`).
 | **app.use(path, fn)** | ✅ | ✅ Supported | ✅ |
 | **app.METHOD(path, ...handlers)** (get, post, put, patch, delete, head, options) | ✅ | ✅ Supported | ✅ |
 | **app.all(path, ...handlers)** | ✅ | ✅ Supported | ✅ |
+| **Wildcard routes** (`/files/*`, Express 5 `/*splat`) | ✅ | ✅ | ✅ Fastify lane — path translated, value bridged to `req.params[0]`/`.splat` |
+| **RegExp / array route paths** | ✅ | ✅ | ✅ via Express lane (auto fallback) |
+| **`next('route')` / `next('router')`** | ✅ | ✅ via Express lane | ✅ via Express lane (auto-detected) |
+| **Mounted sub-app** (`app.use('/x', express())`) | ✅ | N/A | ✅ via Express lane (auto-detected) |
+| **case sensitive / strict routing** | ✅ settings | ✅ Express defaults | ✅ read from app → Fastify `routerOptions` |
 | **app.listen(port, callback?)** | ✅ returns `http.Server` | ✅ Supported — returns `Promise<ServerLike>` (async) | N/A — fast() returns Fastify; use `fastApp.server.listen()` or `fastApp.listen()` |
 | **app.listen(port, host, callback?)** | ✅ | ✅ Supported | N/A |
 | **app.listen(callback?)** | ✅ | ✅ Supported | N/A |
 | **createApp(options?)** | N/A | ✅ `options.dev` enables fallback warnings when downgrading to Express lane | N/A — createApp only |
 | **app.route(path)** | ✅ returns Router#route() | ❌ Not yet (v1: fail loudly if used) | ❌ Not yet |
 | **app.engine(ext, fn)** | ✅ | ❌ Not yet | Express lane only |
-| **app.param(name, fn)** | ✅ | ❌ Not yet | Express lane only |
+| **app.param(name, fn)** | ✅ | ❌ Not yet | ✅ via Express lane (auto: routes using such a param fall back so callbacks fire) |
 | **app.set(setting, val)** | ✅ | ❌ Not yet | ❌ Not yet |
 | **app.get(setting)** | ✅ (settings) | ❌ Not yet | ❌ Not yet |
 | **app.path()** | ✅ | ❌ Not yet | ❌ Not yet |

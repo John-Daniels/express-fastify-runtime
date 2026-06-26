@@ -44,6 +44,18 @@ export function introspectExpressApp(app: ExpressAppLike): RouteEntry[] | null {
   return flattenRouter(router as ExpressRouterLike, '/');
 }
 
+/**
+ * Names of params that have `app.param(name, fn)` callbacks registered. Both Express 4 (`router.params`
+ * on `app._router`) and the Express 5 `router` package store them as `{ [name]: fn[] }`. Routes using
+ * these params run on the Express lane so the callbacks actually fire (we don't reimplement app.param).
+ */
+export function getAppParamNames(app: ExpressAppLike): Set<string> {
+  const router = getAppRouter(app) as (ExpressRouterLike & { params?: Record<string, unknown> }) | undefined;
+  const params = router?.params;
+  if (!params || typeof params !== 'object') return new Set();
+  return new Set(Object.keys(params));
+}
+
 /** Express 4-arg error middleware type. */
 export type ExpressErrorMiddleware = (
   err: Error,

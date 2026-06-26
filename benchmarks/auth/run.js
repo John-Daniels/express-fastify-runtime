@@ -1,6 +1,7 @@
 const { spawn } = require("node:child_process");
 const net = require("node:net");
 const { join } = require("node:path");
+const { sample, fmtSample, COOLDOWN, SETTINGS } = require("../lib/bench");
 
 const rootDir = join(__dirname, "../..");
 
@@ -56,30 +57,11 @@ function getToken(port) {
 }
 
 async function runAutocannon(port, token) {
-  let autocannon;
-  try {
-    const mod = await import("autocannon");
-    autocannon = mod.default;
-  } catch (_) {
-    console.log("  (install: npm i -D autocannon)");
-    return;
-  }
-  const result = await autocannon({
+  const s = await sample({
     url: `http://127.0.0.1:${port}/protected`,
     headers: { Authorization: `Bearer ${token}` },
-    duration: Number(DURATION),
-    connections: 10,
-    pipelining: 1,
   });
-  const avg = result.requests?.average ?? 0;
-  const mean = result.latency?.mean ?? 0;
-  console.log(
-    "  req/s:",
-    avg.toFixed(0),
-    "| latency mean:",
-    mean.toFixed(2),
-    "ms",
-  );
+  console.log("  " + fmtSample(s));
 }
 
 async function runOne(name) {
@@ -97,12 +79,12 @@ async function runOne(name) {
     await runAutocannon(port, token);
   } finally {
     child.kill("SIGTERM");
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, COOLDOWN));
   }
 }
 
 async function main() {
-  console.log("Auth Benchmark (JWT verify, duration=%ss)\n", DURATION);
+  console.log("Auth Benchmark (JWT verify) — %s\n", SETTINGS);
 
   for (const name of targets) {
     process.stdout.write(name + ": ");

@@ -17,6 +17,7 @@ import type { ResponseAdapter } from "../types/internal";
 import { normalizePath } from "../utils/path";
 import { applyMaxListeners } from "../utils/maxListeners";
 import { isExpressJson, expressJsonPassthrough } from "../express/middleware";
+import { toFastifyPath } from "../utils/expressPath";
 
 export type RunMiddleware = (
   req: ExpressRequest,
@@ -129,6 +130,19 @@ function collectApplicableMiddleware(
 
 export interface RegisterFastifyRoutesOptions {
   diagnostics?: boolean;
+  /**
+   * Param names that have `app.param(name, fn)` callbacks registered. Routes whose path uses one of
+   * these params are left on the Express lane so the param callbacks actually run (we don't
+   * reimplement app.param on the Fastify lane). See runtime/fast.ts / introspectExpress.ts.
+   */
+  paramNames?: ReadonlySet<string>;
+}
+
+/** Path segments like ":id" → "id"; used to skip routes that depend on app.param() callbacks. */
+function routeParamNames(path: string): string[] {
+  const out: string[] = [];
+  for (const m of path.matchAll(/:([A-Za-z_$][\w$]*)/g)) out.push(m[1]);
+  return out;
 }
 
 /**
@@ -179,9 +193,18 @@ export function registerFastifyRoutes(
   const routeEntries = classified.filter(
     (c) => c.type === "route" && c.lane === "fastify",
   );
+  const paramNames = options?.paramNames;
   for (const entry of routeEntries) {
     if (entry.type !== "route") continue;
     const path = normalizePath(entry.path);
+    // app.param(): a route using a param that has a registered callback runs on the Express lane.
+    if (paramNames && paramNames.size > 0 && routeParamNames(path).some((n) => paramNames.has(n))) {
+      continue;
+    }
+    // Translate Express path syntax → Fastify (wildcards). null = untranslatable → Express lane.
+    const fastifyPath = toFastifyPath(path);
+    if (fastifyPath === null) continue;
+    const wildcardKey = fastifyPath.wildcard;
     // baseUrl is constant per route — compute once at registration, not per request.
     const baseUrlSegments = path.split("/").filter(Boolean);
     const baseUrl = baseUrlSegments.length >= 1 ? "/" + baseUrlSegments[0] : "";
@@ -208,22 +231,38 @@ export function registerFastifyRoutes(
             console.log(`[express-fastify-runtime] Fastify lane: ${m} ${request.url ?? path}`)
         : null;
 
-      fastify.route({
-        method: m,
-        url: path,
-        handler: (request, reply) => {
-          if (logLane) logLane(request);
-          applyMaxListeners(request.raw, reply.raw);
-          const req = adaptRequest(request);
-          const res = adaptResponse(reply, request);
-          (res as ResWithEnd).req = req;
-          req.baseUrl = baseUrl;
-          if (fastSingle !== null) {
-            return fastSingle(req, res, noopNext) as void | Promise<unknown>;
-          }
-          return run(chain, req, res);
-        },
-      });
+      try {
+        fastify.route({
+          method: m,
+          url: fastifyPath.url,
+          handler: (request, reply) => {
+            if (logLane) logLane(request);
+            applyMaxListeners(request.raw, reply.raw);
+            // Bridge a wildcard: Fastify stores it as params['*']; Express handlers read params[0]
+            // (v4) or params.<name> (v5). Set the Express key so handlers find the value.
+            if (wildcardKey !== null) {
+              const rp = (request as { params?: Record<string, unknown> }).params;
+              if (rp && rp["*"] !== undefined) rp[wildcardKey] = rp["*"];
+            }
+            const req = adaptRequest(request);
+            const res = adaptResponse(reply, request);
+            (res as ResWithEnd).req = req;
+            req.baseUrl = baseUrl;
+            if (fastSingle !== null) {
+              return fastSingle(req, res, noopNext) as void | Promise<unknown>;
+            }
+            return run(chain, req, res);
+          },
+        });
+      } catch (err) {
+        // Fastify rejected this path (exotic syntax we didn't translate). Never crash boot — leave
+        // the route on the Express lane (it falls through to the real Express app), and surface why.
+        if (diagnostics) {
+          console.log(
+            `[express-fastify-runtime] Route ${m} ${path} left on the Express lane (Fastify rejected the path): ${(err as Error).message}`,
+          );
+        }
+      }
     }
   }
 }

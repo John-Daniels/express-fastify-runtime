@@ -15,8 +15,10 @@ import { classifyAll } from "../app/classify";
 import {
   introspectExpressApp,
   getExpressErrorMiddleware,
+  getAppParamNames,
   type ExpressAppLike,
 } from "../app/introspectExpress";
+import { deriveRoutingOptions } from "./routingOptions";
 import { mountExpress } from "../express/mount";
 import { createRequestAdapter } from "../fastify/adapters/request";
 import {
@@ -123,7 +125,10 @@ export function fast(
     ops && "fastify" in ops
       ? ops.fastify
       : (ops as FastifyServerOptions | undefined);
-  const fastify = Fastify({ ...DEFAULT_OPTS, ...fastifyOpts });
+  // Match the wrapped app's Express routing semantics (case-insensitive + non-strict by default);
+  // user-supplied fastify options still win.
+  const routingOpts = deriveRoutingOptions(app);
+  const fastify = Fastify({ ...DEFAULT_OPTS, routerOptions: routingOpts, ...fastifyOpts });
   installExpressJsonParser(fastify); // match express.json(): tolerate empty bodies (→ {})
 
   const diagnostics =
@@ -137,10 +142,11 @@ export function fast(
       res: ExpressResponse,
       next: NextFunction,
     ) => void = (_req, _res, next) => next();
-    registerCompiledRoutes(fastify, classified, noop, { diagnostics });
+    const paramNames = getAppParamNames(app as unknown as ExpressAppLike);
+    registerCompiledRoutes(fastify, classified, noop, { diagnostics, paramNames });
   } else if (diagnostics) {
     console.log(
-      "[express-fastify-runtime] No routes compiled to Fastify lane (all requests will use Express lane). See docs/FAST_PRODUCTION_CHECKLIST.md § Why is everything on the Express lane?",
+      "[express-fastify-runtime] No routes compiled to Fastify lane (all requests will use Express lane). See https://github.com/John-Daniels/express-fastify-runtime/blob/main/docs/FAST_PRODUCTION_CHECKLIST.md (§ Why is everything on the Express lane?)",
     );
   }
 

@@ -12,6 +12,8 @@ import { registerFastifyRoutes } from '../app/compile';
 export interface RegisterCompiledRoutesOptions {
   /** When true, log that the request is handled on the Fastify lane. */
   diagnostics?: boolean;
+  /** Param names with app.param() callbacks — routes using them stay on the Express lane. */
+  paramNames?: ReadonlySet<string>;
 }
 
 export function registerCompiledRoutes(

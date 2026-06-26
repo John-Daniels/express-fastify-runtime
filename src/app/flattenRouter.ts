@@ -67,6 +67,19 @@ export function isExpressRouter(value: unknown): value is ExpressRouterLike {
 }
 
 /**
+ * Returns true if the value looks like a mounted Express sub-app (`app.use('/x', express())`).
+ * A sub-app is a function with its own settings/router but no top-level `.stack` (its stack lives on
+ * `app._router`). We don't flatten sub-apps (they have their own settings/init); they run on the
+ * Express lane as a unit.
+ */
+export function isExpressApp(value: unknown): boolean {
+  if (value == null || typeof value !== 'function') return false;
+  const obj = value as unknown as Record<string, unknown>;
+  if (Array.isArray(obj.stack)) return false; // that's a Router, handled separately
+  return typeof obj.handle === 'function' && (obj._router != null || typeof obj.set === 'function');
+}
+
+/**
  * Get the path for a middleware layer. Uses _path (from our patch), or '/' when slash is true.
  */
 function getMiddlewareLayerPath(layer: ExpressLayerLike): string | null {
@@ -81,7 +94,16 @@ function getMiddlewareLayerPath(layer: ExpressLayerLike): string | null {
  * - Route layers (router.get/post etc.) are always flattened when we have route.path.
  * - Middleware layers (router.use) are flattened when we have the path (from Layer._path patch or slash).
  * - Nested routers are flattened recursively.
- * - If any middleware layer has no path we can read, return null and the caller mounts the router on Express lane.
+ *
+ * Resilient fallback (so ONE un-flattenable router never sinks the whole app):
+ * - A nested router we can't flatten (or one mounted with a RegExp/array path) is SKIPPED here and
+ *   left on the Express lane as a unit — its routes fall through to the real Express app via the
+ *   notFoundHandler, where the full middleware chain (auth, etc.) still runs. Sibling routers keep
+ *   compiling onto the Fastify lane.
+ * - A *middleware function* whose path we can't read is the one case we still bail on (return null
+ *   for the CURRENT router only): we can't tell which routes it guards, so we can't safely compile
+ *   any of this router's routes without risking dropping that middleware. The caller (a parent
+ *   router, or fast()) then keeps this whole router on the Express lane but continues with siblings.
  */
 export function flattenRouter(router: ExpressRouterLike, mountPath: string): RouteEntry[] | null {
   const stack = router.stack;
@@ -130,8 +152,19 @@ export function flattenRouter(router: ExpressRouterLike, mountPath: string): Rou
       layer.name || (typeof handle === 'function' ? (handle as { name?: string }).name : '');
     if (builtinName === 'query' || builtinName === 'expressInit') continue;
 
+    // Mounted sub-app (app.use('/x', express())): it has its own settings/init — don't flatten it;
+    // leave it on the Express lane as a unit (its routes fall through to the real Express app).
+    if (isExpressApp(handle)) continue;
+
     const middlewarePath = getMiddlewareLayerPath(layer);
-    if (middlewarePath === null) return null;
+    if (middlewarePath === null) {
+      // Path unreadable: array/RegExp mount, or an unpatched Layer. If it's a router, leave just
+      // that router on the Express lane and keep compiling siblings. If it's a middleware function,
+      // we don't know which routes it guards — fall back the CURRENT router only (return null), so
+      // we never silently compile a route without a guard middleware that should apply to it.
+      if (isExpressRouter(handle)) continue;
+      return null;
+    }
 
     if (isExpressLaneHandler(handle)) continue;
 
@@ -139,7 +172,10 @@ export function flattenRouter(router: ExpressRouterLike, mountPath: string): Rou
 
     if (isExpressRouter(handle)) {
       const nested = flattenRouter(handle, fullPath);
-      if (nested === null) return null;
+      // Can't flatten this sub-router (e.g. it contains an array/RegExp-mounted middleware): leave
+      // it on the Express lane as a unit and keep compiling the rest of THIS router. Its routes fall
+      // through to the real Express app (with their full middleware chain) via the notFoundHandler.
+      if (nested === null) continue;
       entries.push(...nested);
     } else {
       entries.push({

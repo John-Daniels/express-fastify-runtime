@@ -335,7 +335,7 @@ export function adaptResponse(fastifyReply: FastifyReply, _fastifyReq: FastifyRe
   };
 
   const RES_RENDER_HINT =
-    'res.render is not implemented on the Fastify lane. Wrap this handler with expressLane() so the route runs on the Express lane. See docs/FAST_PRODUCTION_CHECKLIST.md';
+    'res.render is not implemented on the Fastify lane. Wrap this handler with expressLane() so the route runs on the Express lane. See https://github.com/John-Daniels/express-fastify-runtime/blob/main/docs/FAST_PRODUCTION_CHECKLIST.md';
   res.render = function (
     _view: string,
     _locals?: Record<string, unknown>,
@@ -348,7 +348,7 @@ export function adaptResponse(fastifyReply: FastifyReply, _fastifyReq: FastifyRe
       fastifyReply.status(501).type('application/json').send({
         error: 'res.render is not implemented on the Fastify lane',
         hint: 'Wrap this handler with expressLane() so the route runs on the Express lane.',
-        docs: 'docs/FAST_PRODUCTION_CHECKLIST.md',
+        docs: 'https://github.com/John-Daniels/express-fastify-runtime/blob/main/docs/FAST_PRODUCTION_CHECKLIST.md',
       });
     }
     return res;
@@ -674,7 +674,7 @@ const responseProto = {
     _callback?: (err: Error | null, html?: string) => void
   ) {
     const RES_RENDER_HINT =
-      'res.render is not implemented on the Fastify lane. Wrap this handler with expressLane() so the route runs on the Express lane. See docs/FAST_PRODUCTION_CHECKLIST.md';
+      'res.render is not implemented on the Fastify lane. Wrap this handler with expressLane() so the route runs on the Express lane. See https://github.com/John-Daniels/express-fastify-runtime/blob/main/docs/FAST_PRODUCTION_CHECKLIST.md';
     if (process.env.NODE_ENV !== 'production') {
       console.warn(`[express-fastify-runtime] ${RES_RENDER_HINT}`);
     }
@@ -683,7 +683,7 @@ const responseProto = {
       r.status(501).type('application/json').send({
         error: 'res.render is not implemented on the Fastify lane',
         hint: 'Wrap this handler with expressLane() so the route runs on the Express lane.',
-        docs: 'docs/FAST_PRODUCTION_CHECKLIST.md',
+        docs: 'https://github.com/John-Daniels/express-fastify-runtime/blob/main/docs/FAST_PRODUCTION_CHECKLIST.md',
       });
     }
     return this as unknown as ExpressResponse;

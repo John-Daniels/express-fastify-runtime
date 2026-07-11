@@ -70,14 +70,25 @@ export type ExpressErrorMiddleware = (
  * Used by fast() to wire setErrorHandler so next(err) in the Fastify lane reaches Express error handlers.
  */
 export function getExpressErrorMiddleware(app: ExpressAppLike): ExpressErrorMiddleware | null {
+  return getAllExpressErrorMiddleware(app)[0] ?? null;
+}
+
+/**
+ * Return ALL Express error middlewares (4-arg handlers) in registration order. Express runs error
+ * middlewares as a chain — an early one (e.g. Sentry's, a logger) captures the error and calls
+ * next(err) to defer to the next; the last one maps the status and responds. We must run the whole
+ * chain, not just the first, or a deferring handler turns every error into a generic 500.
+ */
+export function getAllExpressErrorMiddleware(app: ExpressAppLike): ExpressErrorMiddleware[] {
   const router = getAppRouter(app);
-  if (!router || !Array.isArray(router.stack)) return null;
+  if (!router || !Array.isArray(router.stack)) return [];
+  const out: ExpressErrorMiddleware[] = [];
   for (const layer of router.stack as Array<{ route?: unknown; handle: unknown }>) {
     if (layer.route) continue; // skip route layers; only use app-level middleware
     const handle = layer.handle;
     if (typeof handle === 'function' && (handle as Function).length === 4) {
-      return handle as ExpressErrorMiddleware;
+      out.push(handle as ExpressErrorMiddleware);
     }
   }
-  return null;
+  return out;
 }

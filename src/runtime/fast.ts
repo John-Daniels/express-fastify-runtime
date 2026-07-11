@@ -14,17 +14,14 @@ import type { Application } from "express";
 import { classifyAll } from "../app/classify";
 import {
   introspectExpressApp,
-  getExpressErrorMiddleware,
+  getAllExpressErrorMiddleware,
   getAppParamNames,
   type ExpressAppLike,
 } from "../app/introspectExpress";
 import { deriveRoutingOptions } from "./routingOptions";
 import { mountExpress } from "../express/mount";
 import { createRequestAdapter } from "../fastify/adapters/request";
-import {
-  createResponseAdapter,
-  adaptResponse as adaptResponseOneShot,
-} from "../fastify/adapters/response";
+import { createResponseAdapter } from "../fastify/adapters/response";
 import { registerCompiledRoutes, installExpressJsonParser } from "../fastify/register";
 import { wrapErrorHandler } from "./errorHandler";
 import type {
@@ -152,16 +149,17 @@ export function fast(
 
   mountExpress(fastify, app as unknown as Application, { diagnostics });
 
-  const expressErrorMiddleware = getExpressErrorMiddleware(
+  const expressErrorMiddlewares = getAllExpressErrorMiddleware(
     app as unknown as ExpressAppLike,
   );
-  if (expressErrorMiddleware) {
+  if (expressErrorMiddlewares.length > 0) {
     const adaptRequest = createRequestAdapter();
+    const adaptResponse = createResponseAdapter();
     fastify.setErrorHandler(
       wrapErrorHandler(
-        expressErrorMiddleware,
+        expressErrorMiddlewares,
         adaptRequest,
-        adaptResponseOneShot,
+        adaptResponse,
       ),
     );
   }

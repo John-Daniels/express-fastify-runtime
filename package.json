@@ -1,6 +1,6 @@
 {
   "name": "express-fastify-runtime",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Run Express apps on Fastify safely, faster, without code changes",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -26,7 +26,10 @@
     "runtime",
     "compatibility",
     "middleware",
-    "migration"
+    "migration",
+    "express-fastify-runtime",
+    "@fastify/express",
+    "fastify-express"
   ],
   "files": [
     "dist",

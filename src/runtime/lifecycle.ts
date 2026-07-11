@@ -12,7 +12,7 @@ import { registerCompiledRoutes, installExpressJsonParser } from '../fastify/reg
 import { deriveRoutingOptions } from './routingOptions';
 import { populateExpressApp } from './populateExpress';
 import { assertNotLocked } from '../utils/assert';
-import { findErrorMiddleware, wrapErrorHandler } from './errorHandler';
+import { findAllErrorMiddleware, wrapErrorHandler } from './errorHandler';
 import { createRequestAdapter } from '../fastify/adapters/request';
 import { adaptResponse } from '../fastify/adapters/response';
 import { RouteStore } from '../app/RouteStore';
@@ -155,10 +155,10 @@ export function createApp(options?: CreateAppOptions): ExpressLikeApp {
       // Wire Express 4-arg error middleware → Fastify error handler so next(err)/throw on the
       // Fastify lane reaches it (parity with fast()). The error mw is excluded from the normal
       // middleware chain (see compile.ts), so it only runs here.
-      const errorMiddleware = findErrorMiddleware(routeStore.getAll());
-      if (errorMiddleware) {
+      const errorMiddlewares = findAllErrorMiddleware(routeStore.getAll());
+      if (errorMiddlewares.length > 0) {
         fastify.setErrorHandler(
-          wrapErrorHandler(errorMiddleware, createRequestAdapter(), adaptResponse)
+          wrapErrorHandler(errorMiddlewares, createRequestAdapter(), adaptResponse)
         );
       }
 

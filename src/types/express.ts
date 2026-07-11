@@ -42,7 +42,7 @@ export type ExpressRequest = IncomingMessage & {
   acceptsCharsets?(...charsets: string[]): string | false | string[];
   acceptsEncodings?(...encodings: string[]): string | false | string[];
   acceptsLanguages?(...langs: string[]): string | false | string[];
-  is?(type: string): string | false;
+  is?(type: string): string | false | null;
   range?(size: number, options?: { combine?: boolean }): unknown;
   xhr?: boolean;
   fresh?: boolean;

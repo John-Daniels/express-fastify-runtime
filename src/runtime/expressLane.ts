@@ -7,14 +7,26 @@
  * so you don't have to rely on RegExp paths.
  */
 
-import type { ExpressMiddleware, ExpressErrorMiddleware } from '../types/express';
+import { unwrapHandler } from '../utils/unwrap';
 
 /** Symbol attached to handlers that must run on the Express lane. */
 export const EXPRESS_LANE = Symbol.for('express-fastify-runtime.expressLane');
 
-/** Check if a handler was marked for the Express lane. */
-export function isExpressLaneHandler(fn: unknown): boolean {
+function hasMarker(fn: unknown): boolean {
   return typeof fn === 'function' && (fn as unknown as Record<symbol, boolean>)[EXPRESS_LANE] === true;
+}
+
+/**
+ * Check if a handler was marked for the Express lane. Also checks the unwrapped handler: APM/
+ * instrumentation (Sentry/OpenTelemetry) wraps route handlers, and the marker (a non-enumerable
+ * symbol) lives on the original fn, not the wrapper — unwrapHandler follows the `__original` chain
+ * so expressLane still forces the Express lane under instrumentation.
+ */
+export function isExpressLaneHandler(fn: unknown): boolean {
+  if (hasMarker(fn)) return true;
+  if (typeof fn !== 'function') return false;
+  const unwrapped = unwrapHandler(fn as (...a: unknown[]) => unknown);
+  return unwrapped !== fn && hasMarker(unwrapped);
 }
 
 /**
@@ -24,12 +36,14 @@ export function isExpressLaneHandler(fn: unknown): boolean {
  * @example
  *   app.get('/page', expressLane((req, res) => res.render('index', { title: 'Hello' })));
  */
-export function expressLane<T extends ExpressMiddleware | ExpressErrorMiddleware>(fn: T): T {
+// Pure pass-through marker: preserves the caller's exact handler type so
+// `router.post('/x', expressLane(handler))` type-checks against @types/express (Express 4 or 5).
+export function expressLane<T extends (...args: any[]) => any>(fn: T): T {
   const wrapped = function (this: unknown, ...args: unknown[]) {
     return (fn as (...a: unknown[]) => unknown).apply(this, args);
   };
   Object.defineProperty(wrapped, EXPRESS_LANE, { value: true, enumerable: false });
-  return wrapped as T;
+  return wrapped as unknown as T;
 }
 
 function wrapForExpressLane(fn: (...args: unknown[]) => unknown): (...args: unknown[]) => unknown {

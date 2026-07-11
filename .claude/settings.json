@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun --version)",
+      "Bash(node --test test/integration/routing-paradigms.test.js)",
+      "Bash(node --test test/*/*.test.js)"
+    ]
+  }
+}

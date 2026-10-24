@@ -36,6 +36,26 @@ const UNSAFE_PATTERNS = [
 ];
 
 /**
+ * Returns true if a LAYER NAME names an Express-required middleware (multer/busboy/...).
+ *
+ * Express records the original handler's name on the layer and KEEPS it even when an APM
+ * (Sentry/OpenTelemetry) replaces layer.handle with a wrapper — then handle.name is e.g. "patched"
+ * and the wrapper's source mentions neither "multer" nor the original, so isExpressRequired(fn)
+ * can't see it and the route would wrongly compile onto the Fastify lane (which has no
+ * multipart parser → 415). The layer name is the reliable signal; same trick as jsonParser in
+ * app/flattenRouter.ts.
+ */
+export function isExpressRequiredName(name?: string): boolean {
+  if (!name) return false;
+  const n = name.toLowerCase();
+  if (UNSAFE_NAMES.has(n)) return true;
+  for (const unsafe of UNSAFE_NAMES) {
+    if (n.includes(unsafe)) return true;
+  }
+  return false;
+}
+
+/**
  * Returns true if the middleware is known to require Express (streams, multipart, etc.).
  */
 export function isExpressRequired(fn: ExpressHandler): boolean {

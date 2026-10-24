@@ -10,6 +10,7 @@
 import type { RouteEntry } from '../types/internal';
 import type { ExpressHandler } from '../types/express';
 import { isExpressLaneHandler } from '../runtime/expressLane';
+import { isExpressRequiredName } from '../utils/detect';
 import { expressJsonPassthrough } from '../express/middleware';
 import { joinPath } from '../utils/path';
 
@@ -119,6 +120,12 @@ export function flattenRouter(router: ExpressRouterLike, mountPath: string): Rou
       // Skip routes whose handler(s) are marked with expressLane() or @ExpressLane()
       const hasExpressLaneHandler = route.stack.some((l) => isExpressLaneHandler(l.handle));
       if (hasExpressLaneHandler) continue;
+      // An Express-required handler (multer/busboy/...) identified by the LAYER name: an APM
+      // (Sentry/OTel) swaps layer.handle for a wrapper, so handle.name becomes "patched" and
+      // detect.ts can't recognise multer — but Express keeps the original name on the layer.
+      // Flag it (classify turns this into lane:'express'); do NOT drop the entry — compile.ts still
+      // needs to see it to count duplicate method+path routes.
+      const expressRequiredHint = route.stack.some((l) => isExpressRequiredName(l.name)) || undefined;
       const fullPath = joinPath(mountPath, route.path);
 
       for (const method of Object.keys(route.methods)) {
@@ -134,6 +141,7 @@ export function flattenRouter(router: ExpressRouterLike, mountPath: string): Rou
           method: validMethod,
           path: fullPath,
           handlers,
+          expressRequiredHint,
         });
       }
       continue;
@@ -182,6 +190,8 @@ export function flattenRouter(router: ExpressRouterLike, mountPath: string): Rou
         type: 'middleware',
         path: fullPath,
         handlers: [neutralizeJsonParser(builtinName, handle as ExpressHandler)],
+        // Same APM-wrapping guard as route layers: app.use(upload.any()) must stay on Express.
+        expressRequiredHint: isExpressRequiredName(builtinName) || undefined,
       });
     }
   }

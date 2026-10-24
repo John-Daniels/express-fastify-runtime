@@ -123,3 +123,7 @@ This doc lists edge cases that can break “drop-in Express” behavior. Correct
 - Each: assert no crashes and correct behavior before measuring throughput.
 
 This file is the single checklist for edge-case correctness. Update as features are implemented or downgraded.
+
+## Multipart uploads behind an APM (Sentry/OTel) → 415
+
+Fastify has no `multipart/form-data` parser, so a multer route that lands on the Fastify lane is rejected with `415 FST_ERR_CTP_INVALID_MEDIA_TYPE`. Two guards keep it on the Express lane: multer is detected by the Express **layer name** (which survives APM wrapping, unlike `handle.name`), and any route guarded by an Express-lane `app.use()` middleware falls through to Express as a whole instead of running without it.

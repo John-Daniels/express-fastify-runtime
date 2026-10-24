@@ -7,11 +7,11 @@ import type { RouteEntry, ClassifiedRoute } from '../types/internal';
 import { isExpressRequired } from '../utils/detect';
 
 export function classifyRoute(entry: RouteEntry): ClassifiedRoute[] {
-  if (entry.type === 'middleware') {
-    const anyUnsafe = entry.handlers.some((fn) => isExpressRequired(fn));
-    return [{ ...entry, lane: anyUnsafe ? 'express' : 'fastify', expressRequired: anyUnsafe }];
-  }
-  const anyUnsafe = entry.handlers.some((fn) => isExpressRequired(fn));
+  // expressRequiredHint is set at flatten time from the Express layer name — the only reliable
+  // signal when an APM (Sentry/OTel) has wrapped the handler and hidden multer/busboy from
+  // handler inspection. See app/flattenRouter.ts and utils/detect.isExpressRequiredName.
+  const anyUnsafe =
+    entry.expressRequiredHint === true || entry.handlers.some((fn) => isExpressRequired(fn));
   return [{ ...entry, lane: anyUnsafe ? 'express' : 'fastify', expressRequired: anyUnsafe }];
 }
 

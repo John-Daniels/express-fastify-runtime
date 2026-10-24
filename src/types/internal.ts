@@ -24,18 +24,26 @@ export interface ServerLike {
   address(): ReturnType<import("node:net").Server["address"]>;
 }
 
+/**
+ * Forces the Express lane regardless of handler inspection. Set at flatten time from the Express
+ * LAYER name, which survives APM wrapping (Sentry/OTel swap layer.handle, so handle.name becomes
+ * "patched" and multer/busboy become invisible to detect.ts). A hint — not a lane decision: the
+ * entry still flows through classify() so duplicate method+path detection keeps seeing it.
+ */
+type ExpressRequiredHint = { expressRequiredHint?: boolean };
+
 export type RouteEntry =
-  | {
+  | ({
       type: "middleware";
       path: string;
       handlers: ExpressHandler[];
-    }
-  | {
+    } & ExpressRequiredHint)
+  | ({
       type: "route";
       method: string;
       path: string;
       handlers: ExpressHandler[];
-    };
+    } & ExpressRequiredHint);
 
 export type Lane = "fastify" | "express";
 

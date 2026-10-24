@@ -128,6 +128,19 @@ function collectApplicableMiddleware(
   return applicable;
 }
 
+function hasExpressLaneMiddleware(
+  routePath: string,
+  classified: ClassifiedRoute[],
+  routeIndex: number,
+): boolean {
+  for (let i = 0; i < routeIndex; i++) {
+    const c = classified[i];
+    if (c.lane !== "express" || c.type !== "middleware") continue;
+    if (pathMatches(c.path === "/" ? "/" : normalizePath(c.path), routePath)) return true;
+  }
+  return false;
+}
+
 export interface RegisterFastifyRoutesOptions {
   diagnostics?: boolean;
   /**
@@ -215,6 +228,9 @@ export function registerFastifyRoutes(
       (m) => (methodPathCount.get(m + " " + path) ?? 0) === 1,
     );
     if (methods.length === 0) continue;
+    // An Express-lane middleware (multer, urlencoded, ...) guarding this route can't run on the
+    // Fastify lane — the whole route must fall through to Express, never run without it.
+    if (hasExpressLaneMiddleware(path, classified, routeIndex)) continue;
     const applicable = collectApplicableMiddleware(path, classified, routeIndex);
     const routeHandlers = (entry.handlers as ExpressHandler[]).map((h) =>
       isExpressJson(h) ? expressJsonPassthrough() : h,

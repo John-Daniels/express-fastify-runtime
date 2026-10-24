@@ -10,7 +10,7 @@
 const { spawn } = require("node:child_process");
 const net = require("node:net");
 const { join } = require("node:path");
-const { sample, fmtSample, COOLDOWN, SETTINGS } = require("../lib/bench");
+const { sample, fmtSample, waitForPort, COOLDOWN, SETTINGS } = require("../lib/bench");
 
 const rootDir = join(__dirname, "../..");
 
@@ -42,23 +42,6 @@ const serverFiles = {
 
 const benchmarkPath = "/api/auth/bar";
 
-function waitForPort(port, timeoutMs = 8000) {
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    function tryConnect() {
-      const socket = net.connect(port, "127.0.0.1", () => {
-        socket.destroy();
-        resolve();
-      });
-      socket.on("error", () => {
-        if (Date.now() - start > timeoutMs)
-          reject(new Error(`timeout waiting for port ${port}`));
-        else setTimeout(tryConnect, 30);
-      });
-    }
-    tryConnect();
-  });
-}
 
 async function runAutocannon(port) {
   console.log("  " + fmtSample(await sample({ url: `http://127.0.0.1:${port}${benchmarkPath}` })));

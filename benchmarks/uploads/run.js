@@ -1,7 +1,7 @@
 const { spawn } = require("node:child_process");
 const net = require("node:net");
 const { join } = require("node:path");
-const { sample, fmtSample, COOLDOWN, SETTINGS } = require("../lib/bench");
+const { sample, fmtSample, waitForPort, COOLDOWN, SETTINGS } = require("../lib/bench");
 const crypto = require("node:crypto");
 
 const rootDir = join(__dirname, "../..");
@@ -32,23 +32,6 @@ const serverFiles = {
   "express-fastify-runtime-fast": join(__dirname, "express-fastify-runtime-fast.js"),
 };
 
-function waitForPort(port, timeoutMs = 8000) {
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    function tryConnect() {
-      const socket = net.connect(port, "127.0.0.1", () => {
-        socket.destroy();
-        resolve();
-      });
-      socket.on("error", () => {
-        if (Date.now() - start > timeoutMs)
-          reject(new Error(`timeout waiting for port ${port}`));
-        else setTimeout(tryConnect, 30);
-      });
-    }
-    tryConnect();
-  });
-}
 
 function generateMultipartBody(sizeBytes) {
   const boundary = "--------------------------1234567890";
@@ -66,8 +49,17 @@ function generateMultipartBody(sizeBytes) {
 }
 
 async function runAutocannon(port, label, bodyObj) {
+  const url = `http://127.0.0.1:${port}/upload`;
+  // Sanity-check ONE real upload before measuring. req/s alone is meaningless if the server is
+  // rejecting every request — a 415 (Fastify has no multipart parser) used to "pass" this benchmark
+  // at ~1.4k req/s while uploading nothing.
+  const probe = await fetch(url, { method: "POST", body: bodyObj.body, headers: bodyObj.headers });
+  if (!probe.ok) {
+    console.log(`  ${label} -> BROKEN: server answered ${probe.status} (${(await probe.text()).slice(0, 80)})`);
+    return;
+  }
   const s = await sample({
-    url: `http://127.0.0.1:${port}/upload`,
+    url,
     method: "POST",
     body: bodyObj.body,
     headers: bodyObj.headers,

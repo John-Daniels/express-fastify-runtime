@@ -10,6 +10,8 @@
 
 import { spawn } from "node:child_process";
 import net from "node:net";
+import bench from "../lib/bench.js";
+const { waitForPort } = bench;
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -112,23 +114,6 @@ if (runScenarios.length === 0) {
   process.exit(1);
 }
 
-function waitForPort(port, timeoutMs = 8000) {
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    function tryConnect() {
-      const socket = net.connect(port, "127.0.0.1", () => {
-        socket.destroy();
-        resolve();
-      });
-      socket.on("error", () => {
-        if (Date.now() - start > timeoutMs)
-          reject(new Error(`timeout waiting for port ${port}`));
-        else setTimeout(tryConnect, 30);
-      });
-    }
-    tryConnect();
-  });
-}
 
 async function runAutocannon(scenario, port) {
   const autocannon = await import("autocannon").catch(() => null);

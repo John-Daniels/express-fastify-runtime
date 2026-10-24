@@ -31,15 +31,23 @@ const COOLDOWN = num(process.env.COOLDOWN, 750);
 
 const SETTINGS = `conns=${CONNECTIONS}, pipelining=${PIPELINING}, ${ROUNDS}×${DURATION}s measured + ${WARMUP}s warmup (median of ${ROUNDS})`;
 
+/**
+ * Call right after spawning the server. If the FIRST connect already succeeds, the child can't have
+ * booted yet — another process owns the port (e.g. a dev server on 3001) and we'd benchmark it
+ * instead (the spawned server dies with EADDRINUSE, hidden by stdio:"ignore"). Fail loudly.
+ */
 function waitForPort(port, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
+    let first = true;
     (function tryConnect() {
       const socket = net.connect(port, "127.0.0.1", () => {
         socket.destroy();
-        resolve();
+        if (first) reject(new Error(`port ${port} is already in use by another process — free it or set PORT=<base>`));
+        else resolve();
       });
       socket.on("error", () => {
+        first = false;
         if (Date.now() - start > timeoutMs) reject(new Error(`timeout waiting for port ${port}`));
         else setTimeout(tryConnect, 30);
       });

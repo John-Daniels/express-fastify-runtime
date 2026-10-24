@@ -10,6 +10,7 @@
  */
 
 const { spawn } = require("node:child_process");
+const { waitForPort } = require("../lib/bench");
 const net = require("node:net");
 const { join } = require("node:path");
 const crypto = require("node:crypto");
@@ -39,16 +40,6 @@ const SCENARIOS = [
   { name: "Auth (JWT)", dir: "auth", path: "/protected", method: "GET", login: "/login" },
 ];
 
-function waitForPort(port, timeoutMs = 8000) {
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    const tc = () => {
-      const s = net.connect(port, "127.0.0.1", () => { s.destroy(); resolve(); });
-      s.on("error", () => (Date.now() - start > timeoutMs ? reject(new Error("timeout " + port)) : setTimeout(tc, 30)));
-    };
-    tc();
-  });
-}
 function median(a) { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m-1]+s[m])/2; }
 
 async function sample(opts, dur) {
